@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin Dashboard Template
+ * Modern Admin Dashboard Template with Enhanced UI
  * 
  * Template for the main invoice management dashboard
  */
@@ -35,54 +35,119 @@ $tab_urls = array(
     'create' => admin_url('admin.php?page=wc-manual-invoices&tab=create'),
     'reports' => admin_url('admin.php?page=wc-manual-invoices&tab=reports'),
 );
+
+// Calculate additional stats
+$overdue_count = 0;
+$this_month_total = 0;
+$conversion_rate = $stats['total'] > 0 ? round(($stats['paid'] / $stats['total']) * 100, 1) : 0;
+
+// Get overdue invoices for current month
+foreach ($invoices as $order) {
+    $due_date = $order->get_meta('_manual_invoice_due_date');
+    if ($due_date && strtotime($due_date) < current_time('timestamp') && $order->needs_payment()) {
+        $overdue_count++;
+    }
+    if ($order->get_date_created()->format('Y-m') === current_time('Y-m')) {
+        $this_month_total += $order->get_total();
+    }
+}
 ?>
 
-<div class="wrap">
-    <h1><?php _e('Manual Invoices', 'wc-manual-invoices'); ?></h1>
-    
-    <!-- Statistics -->
-    <div class="wc-manual-invoices-stats">
-        <ul class="wc-tabs">
-            <li>
-                <div class="stat-box">
-                    <span class="stat-number"><?php echo esc_html($stats['total']); ?></span>
-                    <span class="stat-label"><?php _e('Total Invoices', 'wc-manual-invoices'); ?></span>
-                </div>
-            </li>
-            <li>
-                <div class="stat-box">
-                    <span class="stat-number"><?php echo esc_html($stats['pending']); ?></span>
-                    <span class="stat-label"><?php _e('Pending', 'wc-manual-invoices'); ?></span>
-                </div>
-            </li>
-            <li>
-                <div class="stat-box">
-                    <span class="stat-number"><?php echo esc_html($stats['paid']); ?></span>
-                    <span class="stat-label"><?php _e('Paid', 'wc-manual-invoices'); ?></span>
-                </div>
-            </li>
-            <li>
-                <div class="stat-box">
-                    <span class="stat-number"><?php echo wc_price($stats['total_amount']); ?></span>
-                    <span class="stat-label"><?php _e('Total Value', 'wc-manual-invoices'); ?></span>
-                </div>
-            </li>
-        </ul>
+<div class="wc-manual-invoices-wrap">
+    <!-- Header Section -->
+    <div class="wc-manual-invoices-header">
+        <div class="header-content">
+            <div class="header-text">
+                <h1 class="header-title">
+                    <span class="dashicons dashicons-media-text" style="margin-right: 10px;"></span>
+                    <?php _e('Invoice Management', 'wc-manual-invoices'); ?>
+                </h1>
+                <p class="header-subtitle">
+                    <?php _e('Create, manage, and track your manual invoices with ease', 'wc-manual-invoices'); ?>
+                </p>
+            </div>
+            <div class="header-actions">
+                <a href="<?php echo esc_url($tab_urls['create']); ?>" class="btn-header">
+                    <span class="dashicons dashicons-plus-alt" style="margin-right: 6px;"></span>
+                    <?php _e('New Invoice', 'wc-manual-invoices'); ?>
+                </a>
+                <a href="<?php echo esc_url(admin_url('admin.php?page=wc-manual-invoices-settings')); ?>" class="btn-header">
+                    <span class="dashicons dashicons-admin-generic" style="margin-right: 6px;"></span>
+                    <?php _e('Settings', 'wc-manual-invoices'); ?>
+                </a>
+            </div>
+        </div>
     </div>
     
-    <!-- Tabs -->
+    <!-- Statistics Cards -->
+    <div class="wc-manual-invoices-stats">
+        <div class="stat-card">
+            <div class="stat-icon total">
+                <span class="dashicons dashicons-portfolio" style="color: white;"></span>
+            </div>
+            <span class="stat-number"><?php echo esc_html($stats['total']); ?></span>
+            <span class="stat-label"><?php _e('Total Invoices', 'wc-manual-invoices'); ?></span>
+            <div class="stat-trend">
+                <span class="dashicons dashicons-arrow-up-alt"></span>
+                <span><?php echo date('M Y'); ?></span>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon pending">
+                <span class="dashicons dashicons-clock" style="color: white;"></span>
+            </div>
+            <span class="stat-number"><?php echo esc_html($stats['pending']); ?></span>
+            <span class="stat-label"><?php _e('Pending Payment', 'wc-manual-invoices'); ?></span>
+            <?php if ($overdue_count > 0) : ?>
+                <div class="stat-trend" style="color: #e74c3c;">
+                    <span class="dashicons dashicons-warning"></span>
+                    <span><?php printf(__('%d Overdue', 'wc-manual-invoices'), $overdue_count); ?></span>
+                </div>
+            <?php endif; ?>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon paid">
+                <span class="dashicons dashicons-yes-alt" style="color: white;"></span>
+            </div>
+            <span class="stat-number"><?php echo esc_html($stats['paid']); ?></span>
+            <span class="stat-label"><?php _e('Paid Invoices', 'wc-manual-invoices'); ?></span>
+            <div class="stat-trend">
+                <span class="dashicons dashicons-chart-line"></span>
+                <span><?php echo $conversion_rate; ?>% <?php _e('Rate', 'wc-manual-invoices'); ?></span>
+            </div>
+        </div>
+        
+        <div class="stat-card">
+            <div class="stat-icon value">
+                <span class="dashicons dashicons-money-alt" style="color: white;"></span>
+            </div>
+            <span class="stat-number"><?php echo wc_price($stats['total_amount']); ?></span>
+            <span class="stat-label"><?php _e('Total Value', 'wc-manual-invoices'); ?></span>
+            <div class="stat-trend">
+                <span class="dashicons dashicons-calendar-alt"></span>
+                <span><?php _e('All Time', 'wc-manual-invoices'); ?></span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Navigation Tabs -->
     <nav class="nav-tab-wrapper woo-nav-tab-wrapper">
         <a href="<?php echo esc_url($tab_urls['invoices']); ?>" 
            class="nav-tab <?php echo $current_tab === 'invoices' ? 'nav-tab-active' : ''; ?>">
-            <?php _e('Invoices', 'wc-manual-invoices'); ?>
+            <span class="dashicons dashicons-list-view"></span>
+            <?php _e('All Invoices', 'wc-manual-invoices'); ?>
         </a>
         <a href="<?php echo esc_url($tab_urls['create']); ?>" 
            class="nav-tab <?php echo $current_tab === 'create' ? 'nav-tab-active' : ''; ?>">
+            <span class="dashicons dashicons-plus-alt"></span>
             <?php _e('Create Invoice', 'wc-manual-invoices'); ?>
         </a>
         <a href="<?php echo esc_url($tab_urls['reports']); ?>" 
            class="nav-tab <?php echo $current_tab === 'reports' ? 'nav-tab-active' : ''; ?>">
-            <?php _e('Reports', 'wc-manual-invoices'); ?>
+            <span class="dashicons dashicons-chart-bar"></span>
+            <?php _e('Reports & Analytics', 'wc-manual-invoices'); ?>
         </a>
     </nav>
     
@@ -90,256 +155,252 @@ $tab_urls = array(
     <div class="tab-content">
         <?php if ($current_tab === 'invoices') : ?>
             
-            <!-- Filters -->
+            <!-- Enhanced Filters -->
             <div class="tablenav top">
-                <form method="get">
-                    <input type="hidden" name="page" value="wc-manual-invoices">
-                    <input type="hidden" name="tab" value="invoices">
-                    
-                    <select name="status">
-                        <option value="any" <?php selected($status_filter, 'any'); ?>><?php _e('All Statuses', 'wc-manual-invoices'); ?></option>
-                        <option value="pending" <?php selected($status_filter, 'pending'); ?>><?php _e('Pending', 'wc-manual-invoices'); ?></option>
-                        <option value="manual-invoice" <?php selected($status_filter, 'manual-invoice'); ?>><?php _e('Manual Invoice', 'wc-manual-invoices'); ?></option>
-                        <option value="processing" <?php selected($status_filter, 'processing'); ?>><?php _e('Processing', 'wc-manual-invoices'); ?></option>
-                        <option value="completed" <?php selected($status_filter, 'completed'); ?>><?php _e('Completed', 'wc-manual-invoices'); ?></option>
-                    </select>
-                    
-                    <?php submit_button(__('Filter', 'wc-manual-invoices'), 'button', 'filter', false); ?>
-                </form>
+                <div class="filter-section">
+                    <form method="get" style="display: flex; gap: 12px; align-items: center;">
+                        <input type="hidden" name="page" value="wc-manual-invoices">
+                        <input type="hidden" name="tab" value="invoices">
+                        
+                        <label for="status-filter" style="font-weight: 600;"><?php _e('Status:', 'wc-manual-invoices'); ?></label>
+                        <select name="status" id="status-filter" class="filter-select">
+                            <option value="any" <?php selected($status_filter, 'any'); ?>><?php _e('All Statuses', 'wc-manual-invoices'); ?></option>
+                            <option value="pending" <?php selected($status_filter, 'pending'); ?>><?php _e('Pending Payment', 'wc-manual-invoices'); ?></option>
+                            <option value="manual-invoice" <?php selected($status_filter, 'manual-invoice'); ?>><?php _e('Manual Invoice', 'wc-manual-invoices'); ?></option>
+                            <option value="processing" <?php selected($status_filter, 'processing'); ?>><?php _e('Processing', 'wc-manual-invoices'); ?></option>
+                            <option value="completed" <?php selected($status_filter, 'completed'); ?>><?php _e('Completed', 'wc-manual-invoices'); ?></option>
+                        </select>
+                        
+                        <?php submit_button(__('Filter', 'wc-manual-invoices'), 'secondary', 'filter', false, array('style' => 'margin-left: 8px;')); ?>
+                    </form>
+                </div>
+                
+                <div class="alignright" style="display: flex; gap: 10px; align-items: center;">
+                    <span style="color: #666; font-size: 13px;">
+                        <?php printf(__('Showing %d of %d invoices', 'wc-manual-invoices'), count($invoices), $stats['total']); ?>
+                    </span>
+                    <a href="<?php echo esc_url($tab_urls['create']); ?>" class="button button-primary">
+                        <span class="dashicons dashicons-plus-alt" style="margin-right: 4px;"></span>
+                        <?php _e('Add New', 'wc-manual-invoices'); ?>
+                    </a>
+                </div>
             </div>
             
-            <!-- Invoices Table -->
-            <table class="wp-list-table widefat fixed striped">
-                <thead>
-                    <tr>
-                        <th><?php _e('Invoice #', 'wc-manual-invoices'); ?></th>
-                        <th><?php _e('Customer', 'wc-manual-invoices'); ?></th>
-                        <th><?php _e('Date', 'wc-manual-invoices'); ?></th>
-                        <th><?php _e('Status', 'wc-manual-invoices'); ?></th>
-                        <th><?php _e('Total', 'wc-manual-invoices'); ?></th>
-                        <th><?php _e('Actions', 'wc-manual-invoices'); ?></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php if ($invoices) : ?>
-                        <?php foreach ($invoices as $order) : ?>
-                            <tr>
+            <!-- Enhanced Invoices Table -->
+            <?php if ($invoices) : ?>
+                <table class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th style="width: 120px;">
+                                <span class="dashicons dashicons-id-alt" style="margin-right: 6px;"></span>
+                                <?php _e('Invoice', 'wc-manual-invoices'); ?>
+                            </th>
+                            <th style="width: 200px;">
+                                <span class="dashicons dashicons-businessman" style="margin-right: 6px;"></span>
+                                <?php _e('Customer', 'wc-manual-invoices'); ?>
+                            </th>
+                            <th style="width: 140px;">
+                                <span class="dashicons dashicons-calendar-alt" style="margin-right: 6px;"></span>
+                                <?php _e('Date', 'wc-manual-invoices'); ?>
+                            </th>
+                            <th style="width: 120px;">
+                                <span class="dashicons dashicons-info" style="margin-right: 6px;"></span>
+                                <?php _e('Status', 'wc-manual-invoices'); ?>
+                            </th>
+                            <th style="width: 120px; text-align: right;">
+                                <span class="dashicons dashicons-money-alt" style="margin-right: 6px;"></span>
+                                <?php _e('Amount', 'wc-manual-invoices'); ?>
+                            </th>
+                            <th style="width: 160px;">
+                                <span class="dashicons dashicons-admin-tools" style="margin-right: 6px;"></span>
+                                <?php _e('Actions', 'wc-manual-invoices'); ?>
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($invoices as $order) : 
+                            $due_date = $order->get_meta('_manual_invoice_due_date');
+                            $is_overdue = $due_date && strtotime($due_date) < current_time('timestamp') && $order->needs_payment();
+                        ?>
+                            <tr <?php echo $is_overdue ? 'style="background: #fef7f7;"' : ''; ?>>
                                 <td>
-                                    <a href="<?php echo esc_url(admin_url('post.php?post=' . $order->get_id() . '&action=edit')); ?>">
-                                        #<?php echo esc_html($order->get_order_number()); ?>
-                                    </a>
+                                    <strong>
+                                        <a href="<?php echo esc_url(admin_url('post.php?post=' . $order->get_id() . '&action=edit')); ?>" 
+                                           style="color: #96588a; text-decoration: none; font-weight: 600;">
+                                            #<?php echo esc_html($order->get_order_number()); ?>
+                                        </a>
+                                    </strong>
+                                    <?php if ($is_overdue) : ?>
+                                        <br><small style="color: #e74c3c; font-weight: 600;">
+                                            <span class="dashicons dashicons-warning" style="font-size: 12px;"></span>
+                                            <?php _e('OVERDUE', 'wc-manual-invoices'); ?>
+                                        </small>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
-                                    <?php echo esc_html($order->get_formatted_billing_full_name()); ?>
-                                    <br>
-                                    <small><?php echo esc_html($order->get_billing_email()); ?></small>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <strong style="color: #2c3e50;">
+                                            <?php echo esc_html($order->get_formatted_billing_full_name()); ?>
+                                        </strong>
+                                        <small style="color: #7f8c8d; margin-top: 2px;">
+                                            <span class="dashicons dashicons-email" style="font-size: 12px; margin-right: 4px;"></span>
+                                            <?php echo esc_html($order->get_billing_email()); ?>
+                                        </small>
+                                    </div>
                                 </td>
-                                <td><?php echo esc_html($order->get_date_created()->format('Y-m-d H:i')); ?></td>
+                                <td>
+                                    <div style="display: flex; flex-direction: column;">
+                                        <span style="color: #2c3e50; font-weight: 500;">
+                                            <?php echo esc_html($order->get_date_created()->format('M j, Y')); ?>
+                                        </span>
+                                        <small style="color: #7f8c8d; margin-top: 2px;">
+                                            <?php echo esc_html($order->get_date_created()->format('g:i A')); ?>
+                                        </small>
+                                        <?php if ($due_date) : ?>
+                                            <small style="color: #666; margin-top: 2px;">
+                                                <span class="dashicons dashicons-clock" style="font-size: 12px; margin-right: 2px;"></span>
+                                                Due: <?php echo esc_html(date('M j', strtotime($due_date))); ?>
+                                            </small>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
                                 <td>
                                     <span class="order-status status-<?php echo esc_attr($order->get_status()); ?>">
-                                        <?php echo esc_html(ucfirst($order->get_status())); ?>
+                                        <?php echo esc_html(wc_get_order_status_name($order->get_status())); ?>
                                     </span>
                                 </td>
-                                <td><?php echo $order->get_formatted_order_total(); ?></td>
+                                <td style="text-align: right;">
+                                    <span style="font-size: 16px; font-weight: 600; color: #2c3e50;">
+                                        <?php echo $order->get_formatted_order_total(); ?>
+                                    </span>
+                                    <?php if ($order->needs_payment()) : ?>
+                                        <br><small style="color: #e74c3c;">
+                                            <?php _e('Payment Due', 'wc-manual-invoices'); ?>
+                                        </small>
+                                    <?php endif; ?>
+                                </td>
                                 <td>
-                                    <div class="row-actions">
-                                        <a href="<?php echo esc_url(admin_url('post.php?post=' . $order->get_id() . '&action=edit')); ?>">
-                                            <?php _e('View', 'wc-manual-invoices'); ?>
+                                    <div class="row-actions" style="display: flex; gap: 8px; opacity: 1;">
+                                        <a href="<?php echo esc_url(admin_url('post.php?post=' . $order->get_id() . '&action=edit')); ?>"
+                                           class="button button-small" title="<?php _e('View Details', 'wc-manual-invoices'); ?>">
+                                            <span class="dashicons dashicons-visibility"></span>
                                         </a>
                                         
                                         <?php if ($order->needs_payment()) : ?>
-                                            | <a href="#" class="send-invoice-email" data-order-id="<?php echo esc_attr($order->get_id()); ?>">
-                                                <?php _e('Send Email', 'wc-manual-invoices'); ?>
-                                            </a>
-                                            
-                                            | <a href="#" class="clone-invoice" data-order-id="<?php echo esc_attr($order->get_id()); ?>">
-                                                <?php _e('Clone', 'wc-manual-invoices'); ?>
-                                            </a>
+                                            <button class="button button-small send-invoice-email" 
+                                                    data-order-id="<?php echo esc_attr($order->get_id()); ?>"
+                                                    title="<?php _e('Send Email', 'wc-manual-invoices'); ?>">
+                                                <span class="dashicons dashicons-email-alt"></span>
+                                            </button>
                                         <?php endif; ?>
                                         
-                                        | <a href="#" class="generate-pdf" data-order-id="<?php echo esc_attr($order->get_id()); ?>">
-                                            <?php _e('PDF', 'wc-manual-invoices'); ?>
-                                        </a>
+                                        <button class="button button-small generate-pdf" 
+                                                data-order-id="<?php echo esc_attr($order->get_id()); ?>"
+                                                title="<?php _e('Download PDF', 'wc-manual-invoices'); ?>">
+                                            <span class="dashicons dashicons-pdf"></span>
+                                        </button>
+                                        
+                                        <?php if ($order->needs_payment()) : ?>
+                                            <button class="button button-small clone-invoice" 
+                                                    data-order-id="<?php echo esc_attr($order->get_id()); ?>"
+                                                    title="<?php _e('Clone Invoice', 'wc-manual-invoices'); ?>">
+                                                <span class="dashicons dashicons-admin-page"></span>
+                                            </button>
+                                        <?php endif; ?>
                                         
                                         <?php if ($order->get_status() === 'pending' || $order->get_status() === 'manual-invoice') : ?>
-                                            | <a href="#" class="delete-invoice" data-order-id="<?php echo esc_attr($order->get_id()); ?>" 
-                                                 onclick="return confirm('<?php _e('Are you sure you want to delete this invoice?', 'wc-manual-invoices'); ?>')">
-                                                <?php _e('Delete', 'wc-manual-invoices'); ?>
-                                            </a>
+                                            <button class="button button-small delete-invoice" 
+                                                    data-order-id="<?php echo esc_attr($order->get_id()); ?>"
+                                                    title="<?php _e('Delete Invoice', 'wc-manual-invoices'); ?>"
+                                                    style="background: #dc3545; color: white;">
+                                                <span class="dashicons dashicons-trash"></span>
+                                            </button>
                                         <?php endif; ?>
                                     </div>
                                 </td>
                             </tr>
                         <?php endforeach; ?>
-                    <?php else : ?>
-                        <tr>
-                            <td colspan="6"><?php _e('No invoices found.', 'wc-manual-invoices'); ?></td>
-                        </tr>
-                    <?php endif; ?>
-                </tbody>
-            </table>
+                    </tbody>
+                </table>
+            <?php else : ?>
+                <!-- Empty State -->
+                <div class="wc-invoices-empty-state">
+                    <div class="empty-state-icon">
+                        <span class="dashicons dashicons-media-text"></span>
+                    </div>
+                    <h2 class="empty-state-title"><?php _e('No Invoices Found', 'wc-manual-invoices'); ?></h2>
+                    <p class="empty-state-description">
+                        <?php _e('You haven\'t created any invoices yet. Get started by creating your first invoice!', 'wc-manual-invoices'); ?>
+                    </p>
+                    <a href="<?php echo esc_url($tab_urls['create']); ?>" class="button button-primary button-large">
+                        <span class="dashicons dashicons-plus-alt" style="margin-right: 6px;"></span>
+                        <?php _e('Create Your First Invoice', 'wc-manual-invoices'); ?>
+                    </a>
+                </div>
+            <?php endif; ?>
             
         <?php elseif ($current_tab === 'create') : ?>
             
-            <!-- Create Invoice Form -->
-            <form method="post" id="wc-manual-invoice-form">
-                <?php wp_nonce_field('wc_manual_invoices_nonce'); ?>
-                <input type="hidden" name="action" value="create_invoice">
-                
-                <div class="postbox">
-                    <h3 class="hndle"><?php _e('Customer Information', 'wc-manual-invoices'); ?></h3>
-                    <div class="inside">
-                        <table class="form-table">
-                            <tr>
-                                <th><?php _e('Customer', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <select name="customer_id" id="customer_select" style="width: 100%; max-width: 400px;">
-                                        <option value=""><?php _e('Select existing customer...', 'wc-manual-invoices'); ?></option>
-                                    </select>
-                                    <p class="description"><?php _e('Start typing to search for customers', 'wc-manual-invoices'); ?></p>
-                                </td>
-                            </tr>
-                            <tr class="customer-details" style="display: none;">
-                                <th><?php _e('Or create new customer', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <p>
-                                        <label><?php _e('Email', 'wc-manual-invoices'); ?></label>
-                                        <input type="email" name="customer_email" id="customer_email" style="width: 100%; max-width: 400px;">
-                                    </p>
-                                    <p>
-                                        <label><?php _e('First Name', 'wc-manual-invoices'); ?></label>
-                                        <input type="text" name="billing_first_name" id="billing_first_name" style="width: 100%; max-width: 400px;">
-                                    </p>
-                                    <p>
-                                        <label><?php _e('Last Name', 'wc-manual-invoices'); ?></label>
-                                        <input type="text" name="billing_last_name" id="billing_last_name" style="width: 100%; max-width: 400px;">
-                                    </p>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-                
-                <div class="postbox">
-                    <h3 class="hndle"><?php _e('Invoice Items', 'wc-manual-invoices'); ?></h3>
-                    <div class="inside">
-                        <!-- Products -->
-                        <h4><?php _e('Products', 'wc-manual-invoices'); ?></h4>
-                        <div id="invoice-products">
-                            <div class="invoice-product-row">
-                                <select name="product_ids[]" class="product-select" style="width: 40%;">
-                                    <option value=""><?php _e('Select product...', 'wc-manual-invoices'); ?></option>
-                                </select>
-                                <input type="number" name="product_quantities[]" placeholder="<?php _e('Qty', 'wc-manual-invoices'); ?>" 
-                                       style="width: 15%;" min="1" step="1" value="1">
-                                <input type="number" name="product_totals[]" placeholder="<?php _e('Total', 'wc-manual-invoices'); ?>" 
-                                       style="width: 20%;" min="0" step="0.01">
-                                <button type="button" class="button remove-product-row"><?php _e('Remove', 'wc-manual-invoices'); ?></button>
-                            </div>
-                        </div>
-                        <button type="button" id="add-product-row" class="button"><?php _e('Add Product', 'wc-manual-invoices'); ?></button>
-                        
-                        <!-- Custom Items -->
-                        <h4><?php _e('Custom Items', 'wc-manual-invoices'); ?></h4>
-                        <div id="invoice-custom-items">
-                            <div class="invoice-custom-item-row">
-                                <input type="text" name="custom_item_names[]" placeholder="<?php _e('Item Name', 'wc-manual-invoices'); ?>" 
-                                       style="width: 25%;">
-                                <input type="text" name="custom_item_descriptions[]" placeholder="<?php _e('Description', 'wc-manual-invoices'); ?>" 
-                                       style="width: 25%;">
-                                <input type="number" name="custom_item_quantities[]" placeholder="<?php _e('Qty', 'wc-manual-invoices'); ?>" 
-                                       style="width: 15%;" min="1" step="1" value="1">
-                                <input type="number" name="custom_item_totals[]" placeholder="<?php _e('Total', 'wc-manual-invoices'); ?>" 
-                                       style="width: 20%;" min="0" step="0.01">
-                                <button type="button" class="button remove-custom-item-row"><?php _e('Remove', 'wc-manual-invoices'); ?></button>
-                            </div>
-                        </div>
-                        <button type="button" id="add-custom-item-row" class="button"><?php _e('Add Custom Item', 'wc-manual-invoices'); ?></button>
-                    </div>
-                </div>
-                
-                <div class="postbox">
-                    <h3 class="hndle"><?php _e('Additional Charges', 'wc-manual-invoices'); ?></h3>
-                    <div class="inside">
-                        <!-- Fees -->
-                        <h4><?php _e('Fees', 'wc-manual-invoices'); ?></h4>
-                        <div id="invoice-fees">
-                            <div class="invoice-fee-row">
-                                <input type="text" name="fee_names[]" placeholder="<?php _e('Fee Name', 'wc-manual-invoices'); ?>" 
-                                       style="width: 40%;">
-                                <input type="number" name="fee_amounts[]" placeholder="<?php _e('Amount', 'wc-manual-invoices'); ?>" 
-                                       style="width: 30%;" step="0.01">
-                                <button type="button" class="button remove-fee-row"><?php _e('Remove', 'wc-manual-invoices'); ?></button>
-                            </div>
-                        </div>
-                        <button type="button" id="add-fee-row" class="button"><?php _e('Add Fee', 'wc-manual-invoices'); ?></button>
-                        
-                        <!-- Shipping -->
-                        <h4><?php _e('Shipping', 'wc-manual-invoices'); ?></h4>
-                        <p>
-                            <input type="text" name="shipping_method" placeholder="<?php _e('Shipping Method', 'wc-manual-invoices'); ?>" 
-                                   style="width: 40%;" value="<?php _e('Shipping', 'wc-manual-invoices'); ?>">
-                            <input type="number" name="shipping_total" placeholder="<?php _e('Shipping Total', 'wc-manual-invoices'); ?>" 
-                                   style="width: 30%;" step="0.01">
-                        </p>
-                        
-                        <!-- Tax -->
-                        <h4><?php _e('Tax', 'wc-manual-invoices'); ?></h4>
-                        <p>
-                            <input type="text" name="tax_name" placeholder="<?php _e('Tax Name', 'wc-manual-invoices'); ?>" 
-                                   style="width: 40%;" value="<?php _e('Tax', 'wc-manual-invoices'); ?>">
-                            <input type="number" name="tax_total" placeholder="<?php _e('Tax Total', 'wc-manual-invoices'); ?>" 
-                                   style="width: 30%;" step="0.01">
+            <!-- Create Invoice Form (keeping existing form but with enhanced styling) -->
+            <div style="padding: 30px;">
+                <div style="max-width: 900px; margin: 0 auto;">
+                    <div style="text-align: center; margin-bottom: 40px;">
+                        <h2 style="color: #2c3e50; margin-bottom: 12px;"><?php _e('Create New Invoice', 'wc-manual-invoices'); ?></h2>
+                        <p style="color: #7f8c8d; font-size: 16px;">
+                            <?php _e('Fill in the details below to create a professional invoice for your customer', 'wc-manual-invoices'); ?>
                         </p>
                     </div>
+                    
+                    <!-- Include the existing form content here -->
+                    <?php include WC_MANUAL_INVOICES_PLUGIN_PATH . 'templates/form-create-invoice.php'; ?>
                 </div>
-                
-                <div class="postbox">
-                    <h3 class="hndle"><?php _e('Invoice Details', 'wc-manual-invoices'); ?></h3>
-                    <div class="inside">
-                        <table class="form-table">
-                            <tr>
-                                <th><?php _e('Due Date', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <input type="date" name="due_date" id="due_date" 
-                                           value="<?php echo esc_attr(date('Y-m-d', strtotime('+30 days'))); ?>">
-                                </td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Notes', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <textarea name="notes" rows="4" style="width: 100%; max-width: 600px;"></textarea>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Terms & Conditions', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <textarea name="terms" rows="4" style="width: 100%; max-width: 600px;"></textarea>
-                                </td>
-                            </tr>
-                            <tr>
-                                <th><?php _e('Send Email', 'wc-manual-invoices'); ?></th>
-                                <td>
-                                    <label>
-                                        <input type="checkbox" name="send_email" value="1" checked>
-                                        <?php _e('Send invoice email to customer immediately', 'wc-manual-invoices'); ?>
-                                    </label>
-                                </td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-                
-                <?php submit_button(__('Create Invoice', 'wc-manual-invoices')); ?>
-            </form>
+            </div>
             
         <?php elseif ($current_tab === 'reports') : ?>
             
-            <!-- Reports Content -->
-            <div class="postbox">
-                <h3 class="hndle"><?php _e('Invoice Reports', 'wc-manual-invoices'); ?></h3>
-                <div class="inside">
-                    <p><?php _e('Reports feature coming soon...', 'wc-manual-invoices'); ?></p>
+            <!-- Enhanced Reports Section -->
+            <div style="padding: 30px;">
+                <div style="text-align: center; margin-bottom: 40px;">
+                    <h2 style="color: #2c3e50; margin-bottom: 12px;"><?php _e('Invoice Analytics', 'wc-manual-invoices'); ?></h2>
+                    <p style="color: #7f8c8d; font-size: 16px;">
+                        <?php _e('Detailed insights into your invoice performance and payment trends', 'wc-manual-invoices'); ?>
+                    </p>
+                </div>
+                
+                <!-- Quick Stats Row -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 40px;">
+                    <div class="stat-card">
+                        <h3 style="margin-top: 0; color: #96588a;"><?php _e('This Month', 'wc-manual-invoices'); ?></h3>
+                        <div class="stat-number" style="font-size: 24px;"><?php echo wc_price($this_month_total); ?></div>
+                        <p style="color: #666; margin-bottom: 0;"><?php _e('Revenue Generated', 'wc-manual-invoices'); ?></p>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <h3 style="margin-top: 0; color: #96588a;"><?php _e('Payment Rate', 'wc-manual-invoices'); ?></h3>
+                        <div class="stat-number" style="font-size: 24px;"><?php echo $conversion_rate; ?>%</div>
+                        <p style="color: #666; margin-bottom: 0;"><?php _e('Invoices Paid', 'wc-manual-invoices'); ?></p>
+                    </div>
+                    
+                    <div class="stat-card">
+                        <h3 style="margin-top: 0; color: #96588a;"><?php _e('Outstanding', 'wc-manual-invoices'); ?></h3>
+                        <div class="stat-number" style="font-size: 24px;"><?php echo wc_price($stats['pending_amount']); ?></div>
+                        <p style="color: #666; margin-bottom: 0;"><?php _e('Awaiting Payment', 'wc-manual-invoices'); ?></p>
+                    </div>
+                </div>
+                
+                <!-- Coming Soon Section -->
+                <div style="background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; padding: 60px 40px; text-align: center;">
+                    <div style="width: 80px; height: 80px; margin: 0 auto 24px; border-radius: 50%; background: linear-gradient(135deg, #96588a, #7e4874); display: flex; align-items: center; justify-content: center;">
+                        <span class="dashicons dashicons-chart-bar" style="font-size: 36px; color: white;"></span>
+                    </div>
+                    <h3 style="color: #2c3e50; margin-bottom: 16px; font-size: 24px;"><?php _e('Advanced Reports Coming Soon', 'wc-manual-invoices'); ?></h3>
+                    <p style="color: #7f8c8d; font-size: 16px; margin-bottom: 24px; max-width: 500px; margin-left: auto; margin-right: auto;">
+                        <?php _e('We\'re working on detailed analytics including payment trends, customer insights, and revenue forecasting to help you better understand your business.', 'wc-manual-invoices'); ?>
+                    </p>
+                    <div style="color: #96588a; font-weight: 600;">
+                        <span class="dashicons dashicons-clock" style="margin-right: 6px;"></span>
+                        <?php _e('Expected in the next update', 'wc-manual-invoices'); ?>
+                    </div>
                 </div>
             </div>
             
@@ -347,9 +408,37 @@ $tab_urls = array(
     </div>
 </div>
 
-<!-- Loading overlay -->
-<div id="wc-manual-invoices-loading" style="display: none;">
-    <div class="loading-overlay">
+<!-- Enhanced Loading overlay -->
+<div id="wc-manual-invoices-loading" class="wc-manual-invoices-loading" style="display: none;">
+    <div class="loading-content">
         <div class="loading-spinner"></div>
+        <div class="loading-text"><?php _e('Processing...', 'wc-manual-invoices'); ?></div>
     </div>
 </div>
+
+<script>
+jQuery(document).ready(function($) {
+    // Enhanced tooltips for action buttons
+    $('.row-actions button').each(function() {
+        const title = $(this).attr('title');
+        if (title) {
+            $(this).on('mouseenter', function() {
+                // Could implement custom tooltips here
+            });
+        }
+    });
+    
+    // Smooth transitions for hover effects
+    $('.stat-card, .wp-list-table tbody tr').on('mouseenter mouseleave', function() {
+        // Enhanced by CSS transitions
+    });
+    
+    // Auto-refresh functionality (optional)
+    <?php if ($current_tab === 'invoices') : ?>
+    setInterval(function() {
+        // Could add auto-refresh for real-time updates
+        // location.reload();
+    }, 30000); // 30 seconds
+    <?php endif; ?>
+});
+</script>
