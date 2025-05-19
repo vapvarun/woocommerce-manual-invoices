@@ -300,8 +300,14 @@ class WC_Manual_Invoice_AJAX {
         // Delete PDF file
         WC_Manual_Invoice_PDF::delete_pdf($order_id);
         
-        // Delete order
-        wp_delete_post($order_id, true);
+        // Use HPOS-compatible method for deletion
+        if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+            // HPOS is enabled - use WooCommerce's order deletion
+            $order->delete(true);
+        } else {
+            // Legacy - delete post
+            wp_delete_post($order_id, true);
+        }
         
         wp_send_json_success('Invoice deleted successfully');
     }

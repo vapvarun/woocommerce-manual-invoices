@@ -663,6 +663,7 @@ npm test
 
 ### Credits
 
+- **Wbcom Designs** - Plugin development and maintenance
 - **WooCommerce Team** - For the excellent e-commerce platform
 - **WordPress Community** - For the robust CMS foundation
 - **Contributors** - All developers who have contributed to this project
@@ -676,7 +677,7 @@ npm test
 
 ---
 
-**Made with ❤️ for the WooCommerce community**
+**Made with ❤️ by Wbcom Designs for the WooCommerce community**
 
 ---
 

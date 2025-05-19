@@ -74,7 +74,7 @@ class WC_Manual_Invoice_Generator {
             
             // Add order note
             $order->add_order_note(
-                __('Manual invoice created via WooCommerce Manual Invoices Pro', 'wc-manual-invoices'),
+                __('Manual invoice created via WooCommerce Manual Invoices Pro by Wbcom Designs', 'wc-manual-invoices'),
                 false
             );
             
@@ -393,7 +393,7 @@ class WC_Manual_Invoice_Generator {
             
             // Add order note
             $order->add_order_note(
-                __('Manual invoice updated via WooCommerce Manual Invoices Pro', 'wc-manual-invoices'),
+                __('Manual invoice updated via WooCommerce Manual Invoices Pro by Wbcom Designs', 'wc-manual-invoices'),
                 false
             );
             

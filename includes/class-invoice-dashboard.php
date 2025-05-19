@@ -141,7 +141,18 @@ class WC_Manual_Invoices_Dashboard {
         
         if ($order && $order->get_meta('_is_manual_invoice')) {
             if ($order->get_status() === 'pending' || $order->get_status() === 'manual-invoice') {
-                wp_delete_post($order_id, true);
+                // Delete PDF file first
+                WC_Manual_Invoice_PDF::delete_pdf($order_id);
+                
+                // Use HPOS-compatible method for deletion
+                if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+                    // HPOS is enabled - use WooCommerce's order deletion
+                    $order->delete(true);
+                } else {
+                    // Legacy - delete post
+                    wp_delete_post($order_id, true);
+                }
+                
                 add_action('admin_notices', function() {
                     echo '<div class="updated"><p>' . __('Invoice deleted successfully!', 'wc-manual-invoices') . '</p></div>';
                 });
@@ -303,8 +314,8 @@ class WC_Manual_Invoices_Dashboard {
         
         $args = wp_parse_args($args, $defaults);
         
+        // Build query arguments for WooCommerce order query
         $query_args = array(
-            'type' => 'shop_order',
             'limit' => $args['limit'],
             'offset' => $args['offset'],
             'orderby' => $args['orderby'],
@@ -312,16 +323,18 @@ class WC_Manual_Invoices_Dashboard {
             'meta_query' => array(
                 array(
                     'key' => '_is_manual_invoice',
-                    'value' => true,
+                    'value' => '1',
                     'compare' => '=',
                 ),
             ),
         );
         
+        // Add status filter if specified
         if ($args['status'] !== 'any') {
             $query_args['status'] = $args['status'];
         }
         
+        // Use WooCommerce's order query which is HPOS-compatible
         return wc_get_orders($query_args);
     }
     
@@ -331,66 +344,122 @@ class WC_Manual_Invoices_Dashboard {
      * @return array Statistics
      */
     public static function get_invoice_statistics() {
-        global $wpdb;
-        
         $stats = array();
         
-        // Total invoices
-        $stats['total'] = $wpdb->get_var($wpdb->prepare("
-            SELECT COUNT(*)
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-            WHERE p.post_type = 'shop_order'
-            AND pm.meta_key = '_is_manual_invoice'
-            AND pm.meta_value = '1'
-        "));
+        // Use WooCommerce OrderUtil if available (HPOS compatibility)
+        if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+            // HPOS is enabled - use order queries
+            $stats['total'] = count(wc_get_orders(array(
+                'meta_key' => '_is_manual_invoice',
+                'meta_value' => '1',
+                'limit' => -1,
+                'return' => 'ids'
+            )));
+            
+            $stats['pending'] = count(wc_get_orders(array(
+                'status' => array('pending', 'manual-invoice'),
+                'meta_key' => '_is_manual_invoice',
+                'meta_value' => '1',
+                'limit' => -1,
+                'return' => 'ids'
+            )));
+            
+            $stats['paid'] = count(wc_get_orders(array(
+                'status' => array('processing', 'completed'),
+                'meta_key' => '_is_manual_invoice',
+                'meta_value' => '1',
+                'limit' => -1,
+                'return' => 'ids'
+            )));
+            
+            // Get total amount
+            $all_invoices = wc_get_orders(array(
+                'meta_key' => '_is_manual_invoice',
+                'meta_value' => '1',
+                'limit' => -1
+            ));
+            
+            $total_amount = 0;
+            $pending_amount = 0;
+            
+            foreach ($all_invoices as $order) {
+                $total_amount += $order->get_total();
+                if (in_array($order->get_status(), array('pending', 'manual-invoice'))) {
+                    $pending_amount += $order->get_total();
+                }
+            }
+            
+            $stats['total_amount'] = $total_amount;
+            $stats['pending_amount'] = $pending_amount;
+            
+        } else {
+            // Legacy database queries for non-HPOS
+            global $wpdb;
+            
+            // Total invoices
+            $stats['total'] = $wpdb->get_var($wpdb->prepare("
+                SELECT COUNT(*)
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                WHERE p.post_type = 'shop_order'
+                AND pm.meta_key = '_is_manual_invoice'
+                AND pm.meta_value = '1'
+            "));
+            
+            // Pending invoices
+            $stats['pending'] = $wpdb->get_var($wpdb->prepare("
+                SELECT COUNT(*)
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status IN ('wc-pending', 'wc-manual-invoice')
+                AND pm.meta_key = '_is_manual_invoice'
+                AND pm.meta_value = '1'
+            "));
+            
+            // Paid invoices
+            $stats['paid'] = $wpdb->get_var($wpdb->prepare("
+                SELECT COUNT(*)
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status IN ('wc-processing', 'wc-completed')
+                AND pm.meta_key = '_is_manual_invoice'
+                AND pm.meta_value = '1'
+            "));
+            
+            // Total amount
+            $stats['total_amount'] = $wpdb->get_var($wpdb->prepare("
+                SELECT SUM(pm_total.meta_value)
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
+                WHERE p.post_type = 'shop_order'
+                AND pm.meta_key = '_is_manual_invoice'
+                AND pm.meta_value = '1'
+                AND pm_total.meta_key = '_order_total'
+            "));
+            
+            // Pending amount
+            $stats['pending_amount'] = $wpdb->get_var($wpdb->prepare("
+                SELECT SUM(pm_total.meta_value)
+                FROM {$wpdb->posts} p
+                INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
+                INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
+                WHERE p.post_type = 'shop_order'
+                AND p.post_status IN ('wc-pending', 'wc-manual-invoice')
+                AND pm.meta_key = '_is_manual_invoice'
+                AND pm.meta_value = '1'
+                AND pm_total.meta_key = '_order_total'
+            "));
+        }
         
-        // Pending invoices
-        $stats['pending'] = $wpdb->get_var($wpdb->prepare("
-            SELECT COUNT(*)
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-            WHERE p.post_type = 'shop_order'
-            AND p.post_status IN ('wc-pending', 'wc-manual-invoice')
-            AND pm.meta_key = '_is_manual_invoice'
-            AND pm.meta_value = '1'
-        "));
-        
-        // Paid invoices
-        $stats['paid'] = $wpdb->get_var($wpdb->prepare("
-            SELECT COUNT(*)
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-            WHERE p.post_type = 'shop_order'
-            AND p.post_status IN ('wc-processing', 'wc-completed')
-            AND pm.meta_key = '_is_manual_invoice'
-            AND pm.meta_value = '1'
-        "));
-        
-        // Total amount
-        $stats['total_amount'] = $wpdb->get_var($wpdb->prepare("
-            SELECT SUM(pm_total.meta_value)
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
-            WHERE p.post_type = 'shop_order'
-            AND pm.meta_key = '_is_manual_invoice'
-            AND pm.meta_value = '1'
-            AND pm_total.meta_key = '_order_total'
-        "));
-        
-        // Pending amount
-        $stats['pending_amount'] = $wpdb->get_var($wpdb->prepare("
-            SELECT SUM(pm_total.meta_value)
-            FROM {$wpdb->posts} p
-            INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id
-            INNER JOIN {$wpdb->postmeta} pm_total ON p.ID = pm_total.post_id
-            WHERE p.post_type = 'shop_order'
-            AND p.post_status IN ('wc-pending', 'wc-manual-invoice')
-            AND pm.meta_key = '_is_manual_invoice'
-            AND pm.meta_value = '1'
-            AND pm_total.meta_key = '_order_total'
-        "));
+        // Ensure we have numeric values
+        $stats['total'] = (int) ($stats['total'] ?? 0);
+        $stats['pending'] = (int) ($stats['pending'] ?? 0);
+        $stats['paid'] = (int) ($stats['paid'] ?? 0);
+        $stats['total_amount'] = (float) ($stats['total_amount'] ?? 0);
+        $stats['pending_amount'] = (float) ($stats['pending_amount'] ?? 0);
         
         return $stats;
     }

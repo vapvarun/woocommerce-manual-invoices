@@ -1,19 +1,26 @@
 <?php
 /**
  * Plugin Name: WooCommerce Manual Invoices Pro
- * Plugin URI: https://yoursite.com/woocommerce-manual-invoices
- * Description: Create manual invoices and send "Pay Now" links to customers using WooCommerce's checkout and payment infrastructure.
+ * Plugin URI: https://wbcomdesigns.com/woocommerce-manual-invoices
+ * Description: Create manual invoices and send "Pay Now" links to customers using WooCommerce's checkout and payment infrastructure. Fully compatible with High-Performance Order Storage (HPOS).
  * Version: 1.0.0
- * Author: Your Name
- * Author URI: https://yoursite.com
+ * Author: Wbcom Designs
+ * Author URI: https://wbcomdesigns.com
  * Text Domain: wc-manual-invoices
  * Domain Path: /languages
  * Requires at least: 6.0
  * Tested up to: 6.4
  * WC requires at least: 8.0
  * WC tested up to: 8.5
+ * Requires PHP: 8.0
  * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
+ * Network: false
+ * Update URI: false
+ * 
+ * @package WooCommerce_Manual_Invoices
+ * @version 1.0.0
+ * @author Wbcom Designs
  */
 
 // Prevent direct access
@@ -51,6 +58,9 @@ class WC_Manual_Invoices_Plugin {
      * Constructor
      */
     private function __construct() {
+        // Check WooCommerce compatibility
+        add_action('before_woocommerce_init', array($this, 'declare_compatibility'));
+        
         // Check if WooCommerce is active
         add_action('plugins_loaded', array($this, 'init'));
         
@@ -59,6 +69,25 @@ class WC_Manual_Invoices_Plugin {
         
         // Deactivation hook
         register_deactivation_hook(__FILE__, array($this, 'deactivate'));
+    }
+    
+    /**
+     * Declare compatibility with WooCommerce features
+     */
+    public function declare_compatibility() {
+        if (class_exists('\Automattic\WooCommerce\Utilities\FeaturesUtil')) {
+            \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility(
+                'custom_order_tables',
+                __FILE__,
+                true
+            );
+            
+            \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility(
+                'orders_cache',
+                __FILE__,
+                true
+            );
+        }
     }
     
     /**
@@ -284,11 +313,49 @@ class WC_Manual_Invoices_Plugin {
      * Plugin activation
      */
     public function activate() {
+        // Check minimum requirements
+        if (!$this->check_requirements()) {
+            deactivate_plugins(plugin_basename(__FILE__));
+            wp_die(__('WooCommerce Manual Invoices Pro by Wbcom Designs requires WordPress 6.0+, WooCommerce 8.0+, and PHP 8.0+', 'wc-manual-invoices'));
+        }
+        
         // Create database tables if needed
         $this->create_tables();
         
         // Flush rewrite rules
         flush_rewrite_rules();
+        
+        // Set activation flag
+        update_option('wc_manual_invoices_activated', current_time('mysql'));
+    }
+    
+    /**
+     * Check plugin requirements
+     */
+    private function check_requirements() {
+        global $wp_version;
+        
+        // Check WordPress version
+        if (version_compare($wp_version, '6.0', '<')) {
+            return false;
+        }
+        
+        // Check PHP version
+        if (version_compare(PHP_VERSION, '8.0', '<')) {
+            return false;
+        }
+        
+        // Check if WooCommerce is active
+        if (!class_exists('WooCommerce')) {
+            return false;
+        }
+        
+        // Check WooCommerce version
+        if (defined('WC_VERSION') && version_compare(WC_VERSION, '8.0', '<')) {
+            return false;
+        }
+        
+        return true;
     }
     
     /**
@@ -329,12 +396,15 @@ class WC_Manual_Invoices_Plugin {
      * Show WooCommerce missing notice
      */
     public function woocommerce_missing_notice() {
-        echo '<div class="error"><p>';
-        echo sprintf(
-            __('%s requires WooCommerce to be installed and active.', 'wc-manual-invoices'),
-            '<strong>WooCommerce Manual Invoices Pro</strong>'
-        );
-        echo '</p></div>';
+        $screen = get_current_screen();
+        if ($screen && $screen->id === 'plugins') {
+            echo '<div class="error"><p>';
+            echo sprintf(
+                __('%s requires WooCommerce to be installed and active. This plugin is fully compatible with High-Performance Order Storage (HPOS).', 'wc-manual-invoices'),
+                '<strong>WooCommerce Manual Invoices Pro</strong>'
+            );
+            echo '</p></div>';
+        }
     }
 }
 
