@@ -1,4 +1,3 @@
-
 <?php
 /**
  * Modern Admin Dashboard Template with Enhanced UI

@@ -1,8 +1,8 @@
 <?php
 /**
- * AJAX Handler for Manual Invoices
+ * Enhanced AJAX Handler for Manual Invoices
  * 
- * Handles AJAX requests for invoice management
+ * Handles AJAX requests for invoice management with pagination and large database support
  */
 
 // Prevent direct access
@@ -37,7 +37,7 @@ class WC_Manual_Invoice_AJAX {
     }
     
     /**
-     * Search customers via AJAX
+     * Enhanced customer search with pagination for large databases
      */
     public function search_customers() {
         // Check nonce
@@ -51,13 +51,22 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $term = sanitize_text_field($_POST['term']);
+        $page = intval($_POST['page'] ?? 1);
+        $per_page = 20; // Results per page
+        $offset = ($page - 1) * $per_page;
+        
         $customers = array();
+        $more_results = false;
         
         if (strlen($term) >= 2) {
-            // Search users
-            $user_query = new WP_User_Query(array(
+            // Use WP_User_Query for better performance with large datasets
+            $args = array(
                 'search' => '*' . $term . '*',
                 'search_columns' => array('user_login', 'user_email', 'display_name'),
+                'number' => $per_page + 1, // Get one extra to check if there are more results
+                'offset' => $offset,
+                'orderby' => 'display_name',
+                'order' => 'ASC',
                 'meta_query' => array(
                     'relation' => 'OR',
                     array(
@@ -70,31 +79,118 @@ class WC_Manual_Invoice_AJAX {
                         'value' => $term,
                         'compare' => 'LIKE'
                     ),
-                ),
-                'number' => 20,
-            ));
-            
-            foreach ($user_query->get_results() as $user) {
-                $customer = new WC_Customer($user->ID);
-                $customers[] = array(
-                    'id' => $user->ID,
-                    'text' => sprintf(
-                        '%s (%s)',
-                        $customer->get_display_name(),
-                        $customer->get_email()
+                    array(
+                        'key' => 'billing_first_name',
+                        'value' => $term,
+                        'compare' => 'LIKE'
                     ),
-                    'email' => $customer->get_email(),
-                    'first_name' => $customer->get_first_name(),
-                    'last_name' => $customer->get_last_name(),
-                );
+                    array(
+                        'key' => 'billing_last_name',
+                        'value' => $term,
+                        'compare' => 'LIKE'
+                    ),
+                ),
+            );
+            
+            $user_query = new WP_User_Query($args);
+            $users = $user_query->get_results();
+            
+            // Check if there are more results
+            if (count($users) > $per_page) {
+                $more_results = true;
+                array_pop($users); // Remove the extra user we queried
+            }
+            
+            foreach ($users as $user) {
+                try {
+                    $customer = new WC_Customer($user->ID);
+                    
+                    // Get customer order count for context
+                    $order_count = wc_get_customer_order_count($user->ID);
+                    
+                    // Build display name
+                    $display_name = $customer->get_display_name();
+                    if (empty($display_name)) {
+                        $display_name = $customer->get_first_name() . ' ' . $customer->get_last_name();
+                        $display_name = trim($display_name);
+                        if (empty($display_name)) {
+                            $display_name = $customer->get_email();
+                        }
+                    }
+                    
+                    $customers[] = array(
+                        'id' => $user->ID,
+                        'text' => sprintf('%s (%s)', $display_name, $customer->get_email()),
+                        'name' => $display_name,
+                        'email' => $customer->get_email(),
+                        'first_name' => $customer->get_first_name(),
+                        'last_name' => $customer->get_last_name(),
+                        'phone' => $customer->get_billing_phone(),
+                        'address_1' => $customer->get_billing_address_1(),
+                        'address_2' => $customer->get_billing_address_2(),
+                        'city' => $customer->get_billing_city(),
+                        'state' => $customer->get_billing_state(),
+                        'postcode' => $customer->get_billing_postcode(),
+                        'country' => $customer->get_billing_country(),
+                        'orders_count' => $order_count,
+                    );
+                } catch (Exception $e) {
+                    // Skip customers that can't be loaded
+                    continue;
+                }
+            }
+            
+            // Also search by email directly for exact matches
+            if (is_email($term)) {
+                $user = get_user_by('email', $term);
+                if ($user && !in_array($user->ID, array_column($customers, 'id'))) {
+                    try {
+                        $customer = new WC_Customer($user->ID);
+                        $order_count = wc_get_customer_order_count($user->ID);
+                        
+                        $display_name = $customer->get_display_name();
+                        if (empty($display_name)) {
+                            $display_name = $customer->get_first_name() . ' ' . $customer->get_last_name();
+                            $display_name = trim($display_name);
+                            if (empty($display_name)) {
+                                $display_name = $customer->get_email();
+                            }
+                        }
+                        
+                        // Add exact email match at the beginning
+                        array_unshift($customers, array(
+                            'id' => $user->ID,
+                            'text' => sprintf('%s (%s)', $display_name, $customer->get_email()),
+                            'name' => $display_name,
+                            'email' => $customer->get_email(),
+                            'first_name' => $customer->get_first_name(),
+                            'last_name' => $customer->get_last_name(),
+                            'phone' => $customer->get_billing_phone(),
+                            'address_1' => $customer->get_billing_address_1(),
+                            'address_2' => $customer->get_billing_address_2(),
+                            'city' => $customer->get_billing_city(),
+                            'state' => $customer->get_billing_state(),
+                            'postcode' => $customer->get_billing_postcode(),
+                            'country' => $customer->get_billing_country(),
+                            'orders_count' => $order_count,
+                        ));
+                    } catch (Exception $e) {
+                        // Skip if customer can't be loaded
+                    }
+                }
             }
         }
         
-        wp_send_json($customers);
+        wp_send_json(array(
+            'results' => $customers,
+            'pagination' => array(
+                'more' => $more_results
+            )
+        ));
     }
     
     /**
-     * Search products via AJAX
+     * Enhanced product search with pagination and stock status
      */
     public function search_products() {
         // Check nonce
@@ -108,32 +204,132 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $term = sanitize_text_field($_POST['term']);
+        $page = intval($_POST['page'] ?? 1);
+        $per_page = 20;
+        $offset = ($page - 1) * $per_page;
+        
         $products = array();
+        $more_results = false;
         
         if (strlen($term) >= 2) {
-            $product_query = new WP_Query(array(
+            // Search products using WP_Query for better performance
+            $args = array(
                 'post_type' => 'product',
                 'post_status' => 'publish',
+                'posts_per_page' => $per_page + 1, // Get one extra to check for more results
+                'offset' => $offset,
+                'orderby' => 'title',
+                'order' => 'ASC',
                 's' => $term,
-                'posts_per_page' => 20,
-            ));
-            
-            foreach ($product_query->posts as $post) {
-                $product = wc_get_product($post->ID);
-                $products[] = array(
-                    'id' => $product->get_id(),
-                    'text' => sprintf(
-                        '%s - %s',
-                        $product->get_name(),
-                        wc_price($product->get_price())
+                'meta_query' => array(
+                    'relation' => 'OR',
+                    array(
+                        'key' => '_sku',
+                        'value' => $term,
+                        'compare' => 'LIKE'
                     ),
-                    'price' => $product->get_price(),
-                    'name' => $product->get_name(),
-                );
+                ),
+            );
+            
+            $product_query = new WP_Query($args);
+            $found_products = $product_query->posts;
+            
+            // Check if there are more results
+            if (count($found_products) > $per_page) {
+                $more_results = true;
+                array_pop($found_products); // Remove the extra product
+            }
+            
+            foreach ($found_products as $post) {
+                try {
+                    $product = wc_get_product($post->ID);
+                    
+                    if (!$product || !$product->is_purchasable()) {
+                        continue;
+                    }
+                    
+                    // Get stock status
+                    $stock_status = $product->get_stock_status();
+                    $stock_text = '';
+                    
+                    if ($product->managing_stock()) {
+                        $stock_quantity = $product->get_stock_quantity();
+                        if ($stock_quantity !== null) {
+                            $stock_text = sprintf(__('%d in stock', 'wc-manual-invoices'), $stock_quantity);
+                        }
+                    } else {
+                        $stock_text = $stock_status === 'instock' ? __('In stock', 'wc-manual-invoices') : __('Out of stock', 'wc-manual-invoices');
+                    }
+                    
+                    // Format price
+                    $price = $product->get_price();
+                    $price_formatted = $price ? wc_price($price) : __('Free', 'wc-manual-invoices');
+                    
+                    $products[] = array(
+                        'id' => $product->get_id(),
+                        'text' => sprintf('%s - %s', $product->get_name(), $price_formatted),
+                        'name' => $product->get_name(),
+                        'price' => floatval($price),
+                        'price_formatted' => $price_formatted,
+                        'sku' => $product->get_sku(),
+                        'description' => $product->get_short_description(),
+                        'stock_status' => $stock_status,
+                        'stock_text' => $stock_text,
+                        'type' => $product->get_type(),
+                    );
+                } catch (Exception $e) {
+                    // Skip products that can't be loaded
+                    continue;
+                }
+            }
+            
+            // Also search by SKU exactly
+            $sku_product = wc_get_product_id_by_sku($term);
+            if ($sku_product && !in_array($sku_product, array_column($products, 'id'))) {
+                try {
+                    $product = wc_get_product($sku_product);
+                    if ($product && $product->is_purchasable()) {
+                        $stock_status = $product->get_stock_status();
+                        $stock_text = '';
+                        
+                        if ($product->managing_stock()) {
+                            $stock_quantity = $product->get_stock_quantity();
+                            if ($stock_quantity !== null) {
+                                $stock_text = sprintf(__('%d in stock', 'wc-manual-invoices'), $stock_quantity);
+                            }
+                        } else {
+                            $stock_text = $stock_status === 'instock' ? __('In stock', 'wc-manual-invoices') : __('Out of stock', 'wc-manual-invoices');
+                        }
+                        
+                        $price = $product->get_price();
+                        $price_formatted = $price ? wc_price($price) : __('Free', 'wc-manual-invoices');
+                        
+                        // Add SKU match at the beginning
+                        array_unshift($products, array(
+                            'id' => $product->get_id(),
+                            'text' => sprintf('%s - %s', $product->get_name(), $price_formatted),
+                            'name' => $product->get_name(),
+                            'price' => floatval($price),
+                            'price_formatted' => $price_formatted,
+                            'sku' => $product->get_sku(),
+                            'description' => $product->get_short_description(),
+                            'stock_status' => $stock_status,
+                            'stock_text' => $stock_text,
+                            'type' => $product->get_type(),
+                        ));
+                    }
+                } catch (Exception $e) {
+                    // Skip if product can't be loaded
+                }
             }
         }
         
-        wp_send_json($products);
+        wp_send_json(array(
+            'results' => $products,
+            'pagination' => array(
+                'more' => $more_results
+            )
+        ));
     }
     
     /**
@@ -151,23 +347,30 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $customer_id = intval($_POST['customer_id']);
-        $customer = new WC_Customer($customer_id);
         
-        $details = array(
-            'id' => $customer_id,
-            'email' => $customer->get_email(),
-            'first_name' => $customer->get_first_name(),
-            'last_name' => $customer->get_last_name(),
-            'phone' => $customer->get_billing_phone(),
-            'address_1' => $customer->get_billing_address_1(),
-            'address_2' => $customer->get_billing_address_2(),
-            'city' => $customer->get_billing_city(),
-            'state' => $customer->get_billing_state(),
-            'postcode' => $customer->get_billing_postcode(),
-            'country' => $customer->get_billing_country(),
-        );
-        
-        wp_send_json_success($details);
+        try {
+            $customer = new WC_Customer($customer_id);
+            
+            $details = array(
+                'id' => $customer_id,
+                'email' => $customer->get_email(),
+                'first_name' => $customer->get_first_name(),
+                'last_name' => $customer->get_last_name(),
+                'phone' => $customer->get_billing_phone(),
+                'address_1' => $customer->get_billing_address_1(),
+                'address_2' => $customer->get_billing_address_2(),
+                'city' => $customer->get_billing_city(),
+                'state' => $customer->get_billing_state(),
+                'postcode' => $customer->get_billing_postcode(),
+                'country' => $customer->get_billing_country(),
+            );
+            
+            wp_send_json_success($details);
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to load customer details.', 'wc-manual-invoices')
+            ));
+        }
     }
     
     /**
@@ -185,22 +388,33 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $product_id = intval($_POST['product_id']);
-        $product = wc_get_product($product_id);
         
-        if (!$product) {
-            wp_send_json_error('Product not found');
-            return;
+        try {
+            $product = wc_get_product($product_id);
+            
+            if (!$product) {
+                wp_send_json_error(array(
+                    'message' => __('Product not found.', 'wc-manual-invoices')
+                ));
+                return;
+            }
+            
+            $details = array(
+                'id' => $product->get_id(),
+                'name' => $product->get_name(),
+                'price' => floatval($product->get_price()),
+                'sku' => $product->get_sku(),
+                'description' => $product->get_short_description(),
+                'stock_status' => $product->get_stock_status(),
+                'stock_quantity' => $product->get_stock_quantity(),
+            );
+            
+            wp_send_json_success($details);
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to load product details.', 'wc-manual-invoices')
+            ));
         }
-        
-        $details = array(
-            'id' => $product->get_id(),
-            'name' => $product->get_name(),
-            'price' => $product->get_price(),
-            'sku' => $product->get_sku(),
-            'description' => $product->get_short_description(),
-        );
-        
-        wp_send_json_success($details);
     }
     
     /**
@@ -218,24 +432,37 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $order_id = intval($_POST['order_id']);
-        $order = wc_get_order($order_id);
         
-        if (!$order || !$order->get_meta('_is_manual_invoice')) {
-            wp_send_json_error('Invalid invoice');
-            return;
-        }
-        
-        // Send email
-        if (WC() && WC()->mailer() && isset(WC()->mailer()->emails['WC_Manual_Invoice_Email'])) {
-            WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+        try {
+            $order = wc_get_order($order_id);
             
-            // Update last sent date
-            $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
-            $order->save();
+            if (!$order || !$order->get_meta('_is_manual_invoice')) {
+                wp_send_json_error(array(
+                    'message' => __('Invalid invoice.', 'wc-manual-invoices')
+                ));
+                return;
+            }
             
-            wp_send_json_success('Email sent successfully');
-        } else {
-            wp_send_json_error('Email system not available');
+            // Send email
+            if (WC() && WC()->mailer() && isset(WC()->mailer()->emails['WC_Manual_Invoice_Email'])) {
+                $result = WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+                
+                // Update last sent date
+                $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
+                $order->save();
+                
+                wp_send_json_success(array(
+                    'message' => sprintf(__('Invoice email sent successfully to %s', 'wc-manual-invoices'), $order->get_billing_email())
+                ));
+            } else {
+                wp_send_json_error(array(
+                    'message' => __('Email system not available.', 'wc-manual-invoices')
+                ));
+            }
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to send email. Please try again.', 'wc-manual-invoices')
+            ));
         }
     }
     
@@ -256,16 +483,24 @@ class WC_Manual_Invoice_AJAX {
         $order_id = intval($_POST['order_id']);
         $force_regenerate = !empty($_POST['force_regenerate']);
         
-        $pdf_path = WC_Manual_Invoice_PDF::generate_pdf($order_id, $force_regenerate);
-        
-        if ($pdf_path) {
-            $download_url = WC_Manual_Invoice_PDF::get_pdf_download_url($order_id);
-            wp_send_json_success(array(
-                'download_url' => $download_url,
-                'message' => 'PDF generated successfully',
+        try {
+            $pdf_path = WC_Manual_Invoice_PDF::generate_pdf($order_id, $force_regenerate);
+            
+            if ($pdf_path) {
+                $download_url = WC_Manual_Invoice_PDF::get_pdf_download_url($order_id);
+                wp_send_json_success(array(
+                    'download_url' => $download_url,
+                    'message' => __('PDF generated successfully', 'wc-manual-invoices'),
+                ));
+            } else {
+                wp_send_json_error(array(
+                    'message' => __('Failed to generate PDF. Please check server requirements.', 'wc-manual-invoices')
+                ));
+            }
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('PDF generation failed. Please try again.', 'wc-manual-invoices')
             ));
-        } else {
-            wp_send_json_error('Failed to generate PDF');
         }
     }
     
@@ -284,32 +519,45 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $order_id = intval($_POST['order_id']);
-        $order = wc_get_order($order_id);
         
-        if (!$order || !$order->get_meta('_is_manual_invoice')) {
-            wp_send_json_error('Invalid invoice');
-            return;
+        try {
+            $order = wc_get_order($order_id);
+            
+            if (!$order || !$order->get_meta('_is_manual_invoice')) {
+                wp_send_json_error(array(
+                    'message' => __('Invalid invoice.', 'wc-manual-invoices')
+                ));
+                return;
+            }
+            
+            // Only allow deletion of pending invoices
+            if (!in_array($order->get_status(), array('pending', 'manual-invoice'))) {
+                wp_send_json_error(array(
+                    'message' => __('Cannot delete paid invoices.', 'wc-manual-invoices')
+                ));
+                return;
+            }
+            
+            // Delete PDF file
+            WC_Manual_Invoice_PDF::delete_pdf($order_id);
+            
+            // Use HPOS-compatible method for deletion
+            if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
+                // HPOS is enabled - use WooCommerce's order deletion
+                $order->delete(true);
+            } else {
+                // Legacy - delete post
+                wp_delete_post($order_id, true);
+            }
+            
+            wp_send_json_success(array(
+                'message' => sprintf(__('Invoice #%s deleted successfully', 'wc-manual-invoices'), $order->get_order_number())
+            ));
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to delete invoice. Please try again.', 'wc-manual-invoices')
+            ));
         }
-        
-        // Only allow deletion of pending invoices
-        if ($order->get_status() !== 'pending' && $order->get_status() !== 'manual-invoice') {
-            wp_send_json_error('Cannot delete paid invoices');
-            return;
-        }
-        
-        // Delete PDF file
-        WC_Manual_Invoice_PDF::delete_pdf($order_id);
-        
-        // Use HPOS-compatible method for deletion
-        if (class_exists('\Automattic\WooCommerce\Utilities\OrderUtil') && \Automattic\WooCommerce\Utilities\OrderUtil::custom_orders_table_usage_is_enabled()) {
-            // HPOS is enabled - use WooCommerce's order deletion
-            $order->delete(true);
-        } else {
-            // Legacy - delete post
-            wp_delete_post($order_id, true);
-        }
-        
-        wp_send_json_success('Invoice deleted successfully');
     }
     
     /**
@@ -327,15 +575,24 @@ class WC_Manual_Invoice_AJAX {
         }
         
         $order_id = intval($_POST['order_id']);
-        $result = WC_Manual_Invoice_Generator::clone_invoice($order_id);
         
-        if (is_wp_error($result)) {
-            wp_send_json_error($result->get_error_message());
-        } else {
-            wp_send_json_success(array(
-                'new_order_id' => $result,
-                'message' => sprintf('Invoice cloned successfully! New invoice #%d created.', $result),
-                'redirect_url' => admin_url('admin.php?page=wc-manual-invoices&tab=edit&order_id=' . $result),
+        try {
+            $result = WC_Manual_Invoice_Generator::clone_invoice($order_id);
+            
+            if (is_wp_error($result)) {
+                wp_send_json_error(array(
+                    'message' => $result->get_error_message()
+                ));
+            } else {
+                wp_send_json_success(array(
+                    'new_order_id' => $result,
+                    'message' => sprintf(__('Invoice cloned successfully! New invoice #%d created.', 'wc-manual-invoices'), $result),
+                    'redirect_url' => admin_url('admin.php?page=wc-manual-invoices&tab=create&order_id=' . $result),
+                ));
+            }
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to clone invoice. Please try again.', 'wc-manual-invoices')
             ));
         }
     }
@@ -357,23 +614,33 @@ class WC_Manual_Invoice_AJAX {
         $order_id = intval($_POST['order_id']);
         $new_status = sanitize_text_field($_POST['status']);
         
-        $order = wc_get_order($order_id);
-        
-        if (!$order || !$order->get_meta('_is_manual_invoice')) {
-            wp_send_json_error('Invalid invoice');
-            return;
+        try {
+            $order = wc_get_order($order_id);
+            
+            if (!$order || !$order->get_meta('_is_manual_invoice')) {
+                wp_send_json_error(array(
+                    'message' => __('Invalid invoice.', 'wc-manual-invoices')
+                ));
+                return;
+            }
+            
+            // Update status
+            $order->set_status($new_status);
+            $order->save();
+            
+            // Add order note
+            $order->add_order_note(
+                sprintf(__('Status changed to %s via manual invoice management', 'wc-manual-invoices'), $new_status),
+                false
+            );
+            
+            wp_send_json_success(array(
+                'message' => sprintf(__('Status updated to %s successfully', 'wc-manual-invoices'), wc_get_order_status_name($new_status))
+            ));
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => __('Failed to update status. Please try again.', 'wc-manual-invoices')
+            ));
         }
-        
-        // Update status
-        $order->set_status($new_status);
-        $order->save();
-        
-        // Add order note
-        $order->add_order_note(
-            sprintf('Status changed to %s via manual invoice management', $new_status),
-            false
-        );
-        
-        wp_send_json_success('Status updated successfully');
     }
 }
