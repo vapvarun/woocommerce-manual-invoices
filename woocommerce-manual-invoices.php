@@ -65,9 +65,15 @@ class WC_Manual_Invoices_Plugin {
      * Initialize plugin
      */
     public function init() {
-        // Check if WooCommerce is active
+        // Check if WooCommerce is active and loaded
         if (!class_exists('WooCommerce')) {
             add_action('admin_notices', array($this, 'woocommerce_missing_notice'));
+            return;
+        }
+        
+        // Wait for WooCommerce to fully initialize
+        if (!did_action('woocommerce_loaded')) {
+            add_action('woocommerce_loaded', array($this, 'init'));
             return;
         }
         
@@ -88,16 +94,33 @@ class WC_Manual_Invoices_Plugin {
         // Core classes
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-generator.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-dashboard.php';
-        require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-email.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-pdf.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-ajax.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-settings.php';
+        
+        // Load email class after WooCommerce emails are initialized
+        add_action('woocommerce_init', array($this, 'load_email_class'));
+    }
+    
+    /**
+     * Load email class after WooCommerce is initialized
+     */
+    public function load_email_class() {
+        if (class_exists('WC_Email')) {
+            require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-email.php';
+        }
     }
     
     /**
      * Initialize hooks
      */
     private function init_hooks() {
+        // Initialize AJAX handler
+        new WC_Manual_Invoice_AJAX();
+        
+        // Initialize settings
+        WC_Manual_Invoices_Settings::init();
+        
         // Admin menu
         add_action('admin_menu', array($this, 'add_admin_menu'));
         
@@ -108,8 +131,8 @@ class WC_Manual_Invoices_Plugin {
         add_action('init', array($this, 'register_custom_order_status'));
         add_filter('wc_order_statuses', array($this, 'add_custom_order_status'));
         
-        // Custom email template
-        add_filter('woocommerce_email_classes', array($this, 'add_custom_email_class'));
+        // Custom email template (delayed to ensure WooCommerce is ready)
+        add_action('woocommerce_init', array($this, 'add_custom_email_class'));
         
         // Order actions
         add_action('woocommerce_order_status_pending', array($this, 'send_invoice_email'), 10, 1);
@@ -205,8 +228,17 @@ class WC_Manual_Invoices_Plugin {
     /**
      * Add custom email class
      */
-    public function add_custom_email_class($email_classes) {
-        $email_classes['WC_Manual_Invoice_Email'] = new WC_Manual_Invoice_Email();
+    public function add_custom_email_class() {
+        add_filter('woocommerce_email_classes', array($this, 'register_email_class'));
+    }
+    
+    /**
+     * Register email class with WooCommerce
+     */
+    public function register_email_class($email_classes) {
+        if (class_exists('WC_Manual_Invoice_Email')) {
+            $email_classes['WC_Manual_Invoice_Email'] = new WC_Manual_Invoice_Email();
+        }
         return $email_classes;
     }
     
@@ -216,7 +248,10 @@ class WC_Manual_Invoices_Plugin {
     public function send_invoice_email($order_id) {
         $order = wc_get_order($order_id);
         if ($order && $order->get_meta('_is_manual_invoice')) {
-            WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+            // Ensure email class is loaded
+            if (WC() && WC()->mailer() && isset(WC()->mailer()->emails['WC_Manual_Invoice_Email'])) {
+                WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+            }
         }
     }
     

@@ -273,13 +273,17 @@ class WC_Manual_Invoices_Dashboard {
         }
         
         // Send email
-        WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+        if (WC() && WC()->mailer() && isset(WC()->mailer()->emails['WC_Manual_Invoice_Email'])) {
+            WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+            
+            // Update last sent date
+            $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
+            $order->save();
+            
+            return true;
+        }
         
-        // Update last sent date
-        $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
-        $order->save();
-        
-        return true;
+        return false;
     }
     
     /**

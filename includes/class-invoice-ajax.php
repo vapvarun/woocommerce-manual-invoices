@@ -16,6 +16,14 @@ class WC_Manual_Invoice_AJAX {
      * Constructor
      */
     public function __construct() {
+        // Initialize AJAX handlers
+        add_action('init', array($this, 'init_ajax_handlers'));
+    }
+    
+    /**
+     * Initialize AJAX handlers
+     */
+    public function init_ajax_handlers() {
         // AJAX actions for logged-in users
         add_action('wp_ajax_wc_manual_invoice_search_customers', array($this, 'search_customers'));
         add_action('wp_ajax_wc_manual_invoice_search_products', array($this, 'search_products'));
@@ -218,13 +226,17 @@ class WC_Manual_Invoice_AJAX {
         }
         
         // Send email
-        WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
-        
-        // Update last sent date
-        $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
-        $order->save();
-        
-        wp_send_json_success('Email sent successfully');
+        if (WC() && WC()->mailer() && isset(WC()->mailer()->emails['WC_Manual_Invoice_Email'])) {
+            WC()->mailer()->emails['WC_Manual_Invoice_Email']->trigger($order_id);
+            
+            // Update last sent date
+            $order->update_meta_data('_invoice_last_sent', current_time('mysql'));
+            $order->save();
+            
+            wp_send_json_success('Email sent successfully');
+        } else {
+            wp_send_json_error('Email system not available');
+        }
     }
     
     /**
