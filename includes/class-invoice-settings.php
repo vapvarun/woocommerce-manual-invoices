@@ -1,8 +1,8 @@
 <?php
 /**
- * Invoice Settings Class
+ * Invoice Settings Class with Enhanced Default Values
  * 
- * Handles plugin settings and configuration
+ * Handles plugin settings and configuration with smart defaults
  */
 
 // Prevent direct access
@@ -18,19 +18,19 @@ class WC_Manual_Invoices_Settings {
     const OPTION_NAME = 'wc_manual_invoices_settings';
     
     /**
-     * Default settings
+     * Default settings with smart fallbacks
      */
     private static $defaults = array(
         'default_due_days' => 30,
         'auto_send_email' => 'yes',
         'auto_generate_pdf' => 'yes',
         'invoice_prefix' => 'INV-',
-        'company_name' => '',
-        'company_address' => '',
-        'company_phone' => '',
-        'company_email' => '',
+        'company_name' => '', // Will fallback to site title
+        'company_address' => '', // Will fallback to WooCommerce store address
+        'company_phone' => '', // Will fallback to WooCommerce store phone
+        'company_email' => '', // Will fallback to admin email
         'company_logo' => '',
-        'invoice_footer' => '',
+        'invoice_footer' => '', // Will have a default footer message
         'reminder_enabled' => 'no',
         'reminder_days' => array(7, 14, 30),
         'late_fee_enabled' => 'no',
@@ -53,17 +53,17 @@ class WC_Manual_Invoices_Settings {
             echo '<div class="updated"><p>' . __('Settings saved successfully!', 'wc-manual-invoices') . '</p></div>';
         }
         
-        // Get current settings
-        $settings = self::get_settings();
+        // Get current settings with smart defaults
+        $settings = self::get_settings_with_defaults();
         
         // Display settings form
         include WC_MANUAL_INVOICES_PLUGIN_PATH . 'templates/admin-settings.php';
     }
     
     /**
-     * Get plugin settings
+     * Get plugin settings with automatic fallbacks
      * 
-     * @return array Settings
+     * @return array Settings with smart defaults
      */
     public static function get_settings() {
         $settings = get_option(self::OPTION_NAME, array());
@@ -71,14 +71,118 @@ class WC_Manual_Invoices_Settings {
     }
     
     /**
-     * Get single setting
+     * Get settings with smart defaults that pull from WordPress/WooCommerce
+     * 
+     * @return array Settings with intelligent defaults
+     */
+    public static function get_settings_with_defaults() {
+        $settings = self::get_settings();
+        
+        // Enhanced defaults with fallbacks
+        $smart_defaults = array(
+            'company_name' => !empty($settings['company_name']) ? $settings['company_name'] : get_bloginfo('name'),
+            'company_address' => !empty($settings['company_address']) ? $settings['company_address'] : self::get_default_store_address(),
+            'company_phone' => !empty($settings['company_phone']) ? $settings['company_phone'] : self::get_default_store_phone(),
+            'company_email' => !empty($settings['company_email']) ? $settings['company_email'] : get_option('admin_email'),
+            'invoice_footer' => !empty($settings['invoice_footer']) ? $settings['invoice_footer'] : self::get_default_footer_text(),
+        );
+        
+        // Merge with existing settings
+        return array_merge($settings, $smart_defaults);
+    }
+    
+    /**
+     * Get default store address from WooCommerce settings
+     * 
+     * @return string Store address
+     */
+    private static function get_default_store_address() {
+        $address_parts = array();
+        
+        // Get WooCommerce store address if available
+        if (function_exists('WC')) {
+            $countries = WC()->countries;
+            if ($countries) {
+                $base_location = $countries->get_base_address();
+                $base_location_2 = $countries->get_base_address_2();
+                $base_city = $countries->get_base_city();
+                $base_state = $countries->get_base_state();
+                $base_postcode = $countries->get_base_postcode();
+                $base_country = $countries->get_base_country();
+                
+                if ($base_location) {
+                    $address_parts[] = $base_location;
+                }
+                if ($base_location_2) {
+                    $address_parts[] = $base_location_2;
+                }
+                if ($base_city) {
+                    $city_state_postal = $base_city;
+                    if ($base_state) {
+                        $city_state_postal .= ', ' . $base_state;
+                    }
+                    if ($base_postcode) {
+                        $city_state_postal .= ' ' . $base_postcode;
+                    }
+                    $address_parts[] = $city_state_postal;
+                }
+                if ($base_country && $base_country !== 'US') {
+                    $address_parts[] = $countries->countries[$base_country];
+                }
+            }
+        }
+        
+        return !empty($address_parts) ? implode("\n", $address_parts) : '';
+    }
+    
+    /**
+     * Get default store phone from WooCommerce or WordPress
+     * 
+     * @return string Store phone
+     */
+    private static function get_default_store_phone() {
+        // Try WooCommerce store phone first
+        $store_phone = get_option('woocommerce_store_phone', '');
+        
+        // Fallback to admin user phone if available
+        if (empty($store_phone)) {
+            $admin_users = get_users(array('role' => 'administrator', 'number' => 1));
+            if (!empty($admin_users)) {
+                $admin_phone = get_user_meta($admin_users[0]->ID, 'billing_phone', true);
+                if (!empty($admin_phone)) {
+                    $store_phone = $admin_phone;
+                }
+            }
+        }
+        
+        return $store_phone;
+    }
+    
+    /**
+     * Get default footer text
+     * 
+     * @return string Default footer text
+     */
+    private static function get_default_footer_text() {
+        $site_name = get_bloginfo('name');
+        $current_year = date('Y');
+        
+        return sprintf(
+            __('Thank you for your business!\n\n© %d %s. All rights reserved.\nGenerated by WooCommerce Manual Invoices Pro', 'wc-manual-invoices'),
+            $current_year,
+            $site_name
+        );
+    }
+    
+    /**
+     * Get single setting with intelligent fallback
      * 
      * @param string $key Setting key
      * @param mixed $default Default value
      * @return mixed Setting value
      */
     public static function get_setting($key, $default = null) {
-        $settings = self::get_settings();
+        $settings = self::get_settings_with_defaults();
         
         if (isset($settings[$key])) {
             return $settings[$key];
@@ -105,7 +209,7 @@ class WC_Manual_Invoices_Settings {
         $settings['auto_generate_pdf'] = sanitize_text_field($data['auto_generate_pdf']);
         $settings['invoice_prefix'] = sanitize_text_field($data['invoice_prefix']);
         
-        // Company information
+        // Company information (store as empty strings, use fallbacks in get_settings_with_defaults)
         $settings['company_name'] = sanitize_text_field($data['company_name']);
         $settings['company_address'] = sanitize_textarea_field($data['company_address']);
         $settings['company_phone'] = sanitize_text_field($data['company_phone']);
@@ -124,7 +228,8 @@ class WC_Manual_Invoices_Settings {
         
         // Reminders
         $settings['reminder_enabled'] = sanitize_text_field($data['reminder_enabled']);
-        $settings['reminder_days'] = array_map('intval', explode(',', $data['reminder_days']));
+        $reminder_days_input = sanitize_text_field($data['reminder_days']);
+        $settings['reminder_days'] = array_map('intval', explode(',', $reminder_days_input));
         
         // Late fees
         $settings['late_fee_enabled'] = sanitize_text_field($data['late_fee_enabled']);
@@ -157,19 +262,20 @@ class WC_Manual_Invoices_Settings {
     }
     
     /**
-     * Get company information for invoices
+     * Get company information for invoices with smart defaults
      * 
      * @return array Company information
      */
     public static function get_company_info() {
-        $settings = self::get_settings();
+        $settings = self::get_settings_with_defaults();
         
         return array(
-            'name' => !empty($settings['company_name']) ? $settings['company_name'] : get_bloginfo('name'),
+            'name' => $settings['company_name'],
             'address' => $settings['company_address'],
             'phone' => $settings['company_phone'],
-            'email' => !empty($settings['company_email']) ? $settings['company_email'] : get_option('admin_email'),
+            'email' => $settings['company_email'],
             'logo' => $settings['company_logo'],
+            'footer' => $settings['invoice_footer'],
         );
     }
     
