@@ -1,8 +1,9 @@
 <?php
 /**
- * Enhanced Manual Invoice PDF Generator with Multiple Library Support
+ * Enhanced Manual Invoice PDF Generator with Both DomPDF and TCPDF Support
  * 
- * Handles PDF generation for manual invoices with fallback support
+ * Replaces: includes/class-invoice-pdf.php
+ * This class works with both bundled DomPDF and manually installed TCPDF
  */
 
 // Prevent direct access
@@ -11,16 +12,6 @@ if (!defined('ABSPATH')) {
 }
 
 class WC_Manual_Invoice_PDF {
-    
-    /**
-     * Available PDF libraries in order of preference
-     */
-    private static $pdf_libraries = array(
-        'dompdf' => 'DomPDF',
-        'tcpdf' => 'TCPDF', 
-        'mpdf' => 'mPDF',
-        'fpdf' => 'FPDF'
-    );
     
     /**
      * Generate PDF for invoice with automatic library detection
@@ -66,8 +57,8 @@ class WC_Manual_Invoice_PDF {
             file_put_contents($pdf_dir . 'index.php', '<?php // Silence is golden');
         }
         
-        // Try different PDF libraries
-        $available_library = self::detect_available_library();
+        // Get the best available library
+        $available_library = WC_Manual_Invoice_PDF_Installer::get_best_available_library();
         
         if ($available_library) {
             $pdf_path = self::generate_with_library($available_library, $order, $pdf_path);
@@ -90,142 +81,12 @@ class WC_Manual_Invoice_PDF {
     }
     
     /**
-     * Detect available PDF library
+     * Generate PDF using specified library
      * 
-     * @return string|false Available library name or false
-     */
-    private static function detect_available_library() {
-        // Check for DomPDF
-        if (self::is_dompdf_available()) {
-            return 'dompdf';
-        }
-        
-        // Check for TCPDF
-        if (self::is_tcpdf_available()) {
-            return 'tcpdf';
-        }
-        
-        // Check for mPDF
-        if (self::is_mpdf_available()) {
-            return 'mpdf';
-        }
-        
-        // Check for FPDF
-        if (self::is_fpdf_available()) {
-            return 'fpdf';
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Check if DomPDF is available
-     */
-    private static function is_dompdf_available() {
-        // Try to load DomPDF from various locations
-        $possible_paths = array(
-            // Composer autoload locations
-            ABSPATH . 'vendor/autoload.php',
-            WP_CONTENT_DIR . '/vendor/autoload.php',
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php',
-            // Direct DomPDF paths
-            WP_CONTENT_DIR . '/plugins/dompdf/autoload.inc.php',
-            ABSPATH . 'wp-content/plugins/dompdf/dompdf_config.inc.php'
-        );
-        
-        foreach ($possible_paths as $path) {
-            if (file_exists($path)) {
-                try {
-                    require_once $path;
-                    if (class_exists('\Dompdf\Dompdf') || class_exists('DOMPDF')) {
-                        return true;
-                    }
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        return class_exists('\Dompdf\Dompdf') || class_exists('DOMPDF');
-    }
-    
-    /**
-     * Check if TCPDF is available
-     */
-    private static function is_tcpdf_available() {
-        // Try to include TCPDF
-        $possible_paths = array(
-            WP_CONTENT_DIR . '/plugins/tcpdf/tcpdf.php',
-            ABSPATH . 'vendor/tecnickcom/tcpdf/tcpdf.php',
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/tcpdf.php'
-        );
-        
-        foreach ($possible_paths as $path) {
-            if (file_exists($path)) {
-                try {
-                    require_once $path;
-                    return true;
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        return class_exists('TCPDF');
-    }
-    
-    /**
-     * Check if mPDF is available
-     */
-    private static function is_mpdf_available() {
-        // Try to load mPDF
-        $possible_paths = array(
-            ABSPATH . 'vendor/autoload.php',
-            WP_CONTENT_DIR . '/vendor/autoload.php',
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php'
-        );
-        
-        foreach ($possible_paths as $path) {
-            if (file_exists($path)) {
-                try {
-                    require_once $path;
-                    if (class_exists('\Mpdf\Mpdf')) {
-                        return true;
-                    }
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        return class_exists('\Mpdf\Mpdf');
-    }
-    
-    /**
-     * Check if FPDF is available
-     */
-    private static function is_fpdf_available() {
-        $possible_paths = array(
-            WP_CONTENT_DIR . '/plugins/fpdf/fpdf.php',
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/fpdf/fpdf.php'
-        );
-        
-        foreach ($possible_paths as $path) {
-            if (file_exists($path)) {
-                try {
-                    require_once $path;
-                    return true;
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        return class_exists('FPDF');
-    }
-    
-    /**
-     * Generate PDF using detected library
+     * @param string $library Library to use
+     * @param WC_Order $order Order object
+     * @param string $pdf_path Output path
+     * @return string|false PDF path or false on failure
      */
     private static function generate_with_library($library, $order, $pdf_path) {
         switch ($library) {
@@ -233,10 +94,6 @@ class WC_Manual_Invoice_PDF {
                 return self::generate_with_dompdf($order, $pdf_path);
             case 'tcpdf':
                 return self::generate_with_tcpdf($order, $pdf_path);
-            case 'mpdf':
-                return self::generate_with_mpdf($order, $pdf_path);
-            case 'fpdf':
-                return self::generate_with_fpdf($order, $pdf_path);
             default:
                 return false;
         }
@@ -247,23 +104,26 @@ class WC_Manual_Invoice_PDF {
      */
     private static function generate_with_dompdf($order, $pdf_path) {
         try {
-            // Initialize DomPDF
-            if (class_exists('\Dompdf\Dompdf')) {
-                $dompdf = new \Dompdf\Dompdf();
-                $options = $dompdf->getOptions();
-            } else {
-                // Legacy DomPDF
-                $dompdf = new DOMPDF();
-                $options = null;
+            // Load DomPDF
+            $dompdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php';
+            if (!file_exists($dompdf_path)) {
+                return false;
             }
             
-            // Set options if available
-            if ($options) {
+            require_once $dompdf_path;
+            
+            // Initialize DomPDF
+            if (class_exists('Dompdf\\Dompdf')) {
+                $dompdf = new \Dompdf\Dompdf();
+                $options = $dompdf->getOptions();
                 $options->set('defaultFont', 'Arial');
                 $options->set('isRemoteEnabled', true);
                 $options->set('isHtml5ParserEnabled', true);
                 $options->set('isFontSubsettingEnabled', true);
                 $options->set('chroot', array(ABSPATH, WP_CONTENT_DIR));
+            } else {
+                // Legacy DomPDF
+                $dompdf = new DOMPDF();
             }
             
             // Get HTML content
@@ -298,8 +158,19 @@ class WC_Manual_Invoice_PDF {
      */
     private static function generate_with_tcpdf($order, $pdf_path) {
         try {
+            // Load TCPDF with proper configuration
+            $tcpdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/tcpdf.php';
+            if (!file_exists($tcpdf_path)) {
+                return false;
+            }
+            
+            // Set up TCPDF configuration before loading
+            self::setup_tcpdf_config();
+            
+            require_once $tcpdf_path;
+            
             // Create new PDF document
-            $pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true, 'UTF-8', false);
+            $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
             
             // Set document information
             $company_info = WC_Manual_Invoices_Settings::get_company_info();
@@ -345,118 +216,42 @@ class WC_Manual_Invoice_PDF {
     }
     
     /**
-     * Generate PDF using mPDF
+     * Setup TCPDF configuration constants
      */
-    private static function generate_with_mpdf($order, $pdf_path) {
-        try {
-            // Create mPDF instance
-            $mpdf = new \Mpdf\Mpdf([
-                'mode' => 'utf-8',
-                'format' => 'A4',
-                'orientation' => 'P',
-                'margin_left' => 15,
-                'margin_right' => 15,
-                'margin_top' => 15,
-                'margin_bottom' => 15,
-                'tempDir' => sys_get_temp_dir()
-            ]);
-            
-            // Set document info
-            $company_info = WC_Manual_Invoices_Settings::get_company_info();
-            $mpdf->SetTitle('Invoice #' . $order->get_order_number());
-            $mpdf->SetAuthor($company_info['name']);
-            $mpdf->SetCreator('WooCommerce Manual Invoices Pro');
-            
-            // Get HTML content
-            $html_content = self::get_invoice_html($order);
-            
-            // Write HTML
-            $mpdf->WriteHTML($html_content);
-            
-            // Output to file
-            $mpdf->Output($pdf_path, 'F');
-            
-            return $pdf_path;
-            
-        } catch (Exception $e) {
-            error_log('WC Manual Invoices PDF Error (mPDF): ' . $e->getMessage());
+    private static function setup_tcpdf_config() {
+        // Prevent multiple definitions
+        if (defined('K_TCPDF_EXTERNAL_CONFIG')) {
+            return;
         }
         
-        return false;
-    }
-    
-    /**
-     * Generate PDF using FPDF (text-based, simpler)
-     */
-    private static function generate_with_fpdf($order, $pdf_path) {
-        try {
-            $pdf = new FPDF();
-            $pdf->AddPage();
-            $pdf->SetFont('Arial', 'B', 16);
-            
-            // Company info
-            $company_info = WC_Manual_Invoices_Settings::get_company_info();
-            
-            // Header
-            $pdf->Cell(0, 10, $company_info['name'], 0, 1, 'C');
-            $pdf->SetFont('Arial', '', 12);
-            $pdf->Cell(0, 10, 'INVOICE #' . $order->get_order_number(), 0, 1, 'C');
-            $pdf->Ln(10);
-            
-            // Customer info
-            $pdf->SetFont('Arial', 'B', 12);
-            $pdf->Cell(0, 10, 'Bill To:', 0, 1);
-            $pdf->SetFont('Arial', '', 10);
-            $pdf->Cell(0, 6, $order->get_formatted_billing_full_name(), 0, 1);
-            $pdf->Cell(0, 6, $order->get_billing_email(), 0, 1);
-            
-            if ($order->get_billing_phone()) {
-                $pdf->Cell(0, 6, $order->get_billing_phone(), 0, 1);
-            }
-            
-            $pdf->Ln(10);
-            
-            // Items header
-            $pdf->SetFont('Arial', 'B', 10);
-            $pdf->Cell(80, 10, 'Description', 1);
-            $pdf->Cell(30, 10, 'Quantity', 1);
-            $pdf->Cell(30, 10, 'Price', 1);
-            $pdf->Cell(30, 10, 'Total', 1);
-            $pdf->Ln();
-            
-            // Items
-            $pdf->SetFont('Arial', '', 10);
-            foreach ($order->get_items() as $item) {
-                $pdf->Cell(80, 8, $item->get_name(), 1);
-                $pdf->Cell(30, 8, $item->get_quantity(), 1, 0, 'C');
-                $pdf->Cell(30, 8, wc_price($item->get_total() / $item->get_quantity()), 1, 0, 'R');
-                $pdf->Cell(30, 8, wc_price($item->get_total()), 1, 0, 'R');
-                $pdf->Ln();
-            }
-            
-            // Total
-            $pdf->Ln(5);
-            $pdf->SetFont('Arial', 'B', 12);
-            $pdf->Cell(140, 10, 'Total:', 0, 0, 'R');
-            $pdf->Cell(30, 10, strip_tags($order->get_formatted_order_total()), 0, 1, 'R');
-            
-            // Payment link if needed
-            if ($order->needs_payment()) {
-                $pdf->Ln(10);
-                $pdf->SetFont('Arial', '', 10);
-                $pdf->Cell(0, 10, 'Pay online: ' . $order->get_checkout_payment_url(), 0, 1);
-            }
-            
-            // Output to file
-            $pdf->Output('F', $pdf_path);
-            
-            return $pdf_path;
-            
-        } catch (Exception $e) {
-            error_log('WC Manual Invoices PDF Error (FPDF): ' . $e->getMessage());
+        // Define external config flag
+        define('K_TCPDF_EXTERNAL_CONFIG', true);
+        
+        // Define paths
+        $tcpdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/';
+        $upload_dir = wp_upload_dir();
+        $cache_path = $upload_dir['basedir'] . '/wc-manual-invoices/tcpdf-cache/';
+        
+        // Create cache directory if it doesn't exist
+        if (!file_exists($cache_path)) {
+            wp_mkdir_p($cache_path);
         }
         
-        return false;
+        // TCPDF Configuration Constants
+        define('K_PATH_MAIN', $tcpdf_path);
+        define('K_PATH_URL', WC_MANUAL_INVOICES_PLUGIN_URL . 'lib/tcpdf/');
+        define('K_PATH_FONTS', $tcpdf_path . 'fonts/');
+        define('K_PATH_CACHE', $cache_path);
+        define('K_PATH_URL_CACHE', $upload_dir['baseurl'] . '/wc-manual-invoices/tcpdf-cache/');
+        define('K_PATH_IMAGES', $tcpdf_path . 'examples/images/');
+        define('K_BLANK_IMAGE', $tcpdf_path . 'examples/images/_blank.png');
+        define('K_CELL_HEIGHT_RATIO', 1.25);
+        define('K_TITLE_MAGNIFICATION', 1.3);
+        define('K_SMALL_RATIO', 2/3);
+        define('K_THAI_TOPCHARS', true);
+        define('K_TCPDF_CALLS_IN_HTML', false);
+        define('K_TCPDF_THROW_EXCEPTION_ERROR', false);
+        define('K_TIMEZONE', 'UTC');
     }
     
     /**
@@ -473,7 +268,7 @@ class WC_Manual_Invoice_PDF {
         $html .= '<html><head><meta charset="UTF-8">';
         $html .= '<title>Invoice #' . esc_html($order->get_order_number()) . '</title>';
         
-        // Enhanced CSS for better PDF rendering
+        // Enhanced CSS for better PDF rendering with both libraries
         $html .= '<style>
             @page { margin: 20mm; }
             body { 
@@ -551,6 +346,12 @@ class WC_Manual_Invoice_PDF {
                 font-weight: bold;
                 border: 1px solid #ddd;
             }
+            .items-table th.text-center {
+                text-align: center;
+            }
+            .items-table th.text-right {
+                text-align: right;
+            }
             .items-table td { 
                 padding: 10px 8px; 
                 border: 1px solid #ddd; 
@@ -558,6 +359,17 @@ class WC_Manual_Invoice_PDF {
             }
             .items-table tr:nth-child(even) { 
                 background-color: #f9f9f9; 
+            }
+            .items-table .item-name {
+                font-weight: bold;
+                color: #333;
+                font-size: 12px;
+            }
+            .items-table .item-description {
+                color: #666;
+                font-size: 10px;
+                font-style: italic;
+                margin-top: 4px;
             }
             .text-right { text-align: right; }
             .text-center { text-align: center; }
@@ -734,10 +546,10 @@ class WC_Manual_Invoice_PDF {
             $item_price = $item_quantity > 0 ? $item_total / $item_quantity : 0;
             
             $html .= '<tr>';
-            $html .= '<td><strong>' . esc_html($item->get_name()) . '</strong>';
+            $html .= '<td><div class="item-name">' . esc_html($item->get_name()) . '</div>';
             
             if ($item->get_meta('_custom_item_description')) {
-                $html .= '<br><small style="color: #666;">' . esc_html($item->get_meta('_custom_item_description')) . '</small>';
+                $html .= '<div class="item-description">' . esc_html($item->get_meta('_custom_item_description')) . '</div>';
             }
             
             $html .= '</td>';
@@ -849,215 +661,65 @@ class WC_Manual_Invoice_PDF {
         $content .= "                           INVOICE\n";
         $content .= str_repeat('=', 80) . "\n\n";
         
-        // Invoice details in a box
-        $content .= "┌" . str_repeat('─', 78) . "┐\n";
-        $content .= "│ Invoice: " . str_pad($invoice_number, 20) . " │ Date: " . str_pad(wc_format_datetime($order->get_date_created()), 20) . " │\n";
+        // Invoice details
+        $content .= "Invoice: " . $invoice_number . "\n";
+        $content .= "Date: " . wc_format_datetime($order->get_date_created()) . "\n";
         if ($due_date) {
-            $due_formatted = date_i18n(get_option('date_format'), strtotime($due_date));
-            $overdue_text = (strtotime($due_date) < current_time('timestamp') && $order->needs_payment()) ? ' (OVERDUE!)' : '';
-            $content .= "│ Due Date: " . str_pad($due_formatted . $overdue_text, 66) . " │\n";
+            $content .= "Due Date: " . date_i18n(get_option('date_format'), strtotime($due_date)) . "\n";
         }
-        $content .= "│ Status: " . str_pad(wc_get_order_status_name($order->get_status()), 68) . " │\n";
-        $content .= "└" . str_repeat('─', 78) . "┘\n\n";
+        $content .= "Status: " . wc_get_order_status_name($order->get_status()) . "\n";
+        $content .= "Total: " . strip_tags($order->get_formatted_order_total()) . "\n\n";
         
-        // Two-column layout for addresses
-        $content .= "FROM:" . str_repeat(' ', 35) . "TO:\n";
-        $content .= str_repeat('-', 38) . " " . str_repeat('-', 38) . "\n";
-        
-        $from_lines = array();
-        $from_lines[] = $company_info['name'];
-        if ($company_info['address']) {
-            $from_lines = array_merge($from_lines, explode("\n", $company_info['address']));
-        }
-        if ($company_info['phone']) {
-            $from_lines[] = 'Phone: ' . $company_info['phone'];
-        }
-        if ($company_info['email']) {
-            $from_lines[] = 'Email: ' . $company_info['email'];
-        }
-        
-        $to_lines = array();
-        $to_lines[] = $order->get_formatted_billing_full_name();
-        $to_lines[] = $order->get_billing_email();
+        // Customer info
+        $content .= "CUSTOMER:\n";
+        $content .= $order->get_formatted_billing_full_name() . "\n";
+        $content .= $order->get_billing_email() . "\n";
         if ($order->get_billing_phone()) {
-            $to_lines[] = 'Phone: ' . $order->get_billing_phone();
+            $content .= $order->get_billing_phone() . "\n";
         }
-        if ($order->get_formatted_billing_address()) {
-            $to_lines = array_merge($to_lines, explode('<br/>', $order->get_formatted_billing_address()));
-        }
-        
-        $max_lines = max(count($from_lines), count($to_lines));
-        for ($i = 0; $i < $max_lines; $i++) {
-            $from_line = isset($from_lines[$i]) ? $from_lines[$i] : '';
-            $to_line = isset($to_lines[$i]) ? strip_tags($to_lines[$i]) : '';
-            $content .= str_pad($from_line, 38) . " " . $to_line . "\n";
-        }
-        
         $content .= "\n";
         
-        // Items table with better formatting
-        $content .= "INVOICE ITEMS:\n";
-        $content .= "┌" . str_repeat('─', 78) . "┐\n";
-        $content .= "│" . str_pad("Description", 35) . "│" . str_pad("Qty", 8) . "│" . str_pad("Price", 12) . "│" . str_pad("Total", 12) . "│\n";
-        $content .= "├" . str_repeat('─', 35) . "┼" . str_repeat('─', 8) . "┼" . str_repeat('─', 12) . "┼" . str_repeat('─', 12) . "┤\n";
+        // Items
+        $content .= "ITEMS:\n";
+        $content .= str_repeat('-', 80) . "\n";
         
         foreach ($order->get_items() as $item) {
-            $name = $item->get_name();
-            if (strlen($name) > 33) {
-                $name = substr($name, 0, 30) . '...';
-            }
-            
-            $item_total = $item->get_total();
-            $item_quantity = $item->get_quantity();
-            $item_price = $item_quantity > 0 ? $item_total / $item_quantity : 0;
-            
-            $content .= "│" . str_pad($name, 35) . "│" . str_pad($item_quantity, 8, ' ', STR_PAD_LEFT) . "│" . 
-                       str_pad(strip_tags(wc_price($item_price)), 12, ' ', STR_PAD_LEFT) . "│" . 
-                       str_pad(strip_tags(wc_price($item_total)), 12, ' ', STR_PAD_LEFT) . "│\n";
+            $content .= sprintf("%-50s %5d %15s\n", 
+                substr($item->get_name(), 0, 50), 
+                $item->get_quantity(), 
+                strip_tags(wc_price($item->get_total()))
+            );
             
             if ($item->get_meta('_custom_item_description')) {
-                $desc = $item->get_meta('_custom_item_description');
-                if (strlen($desc) > 33) {
-                    $desc = substr($desc, 0, 30) . '...';
-                }
-                $content .= "│  " . str_pad($desc, 33) . "│" . str_repeat(' ', 8) . "│" . str_repeat(' ', 12) . "│" . str_repeat(' ', 12) . "│\n";
+                $content .= "  " . $item->get_meta('_custom_item_description') . "\n";
             }
         }
         
-        $content .= "└" . str_repeat('─', 78) . "┘\n\n";
-        
-        // Totals section
-        $content .= "TOTALS:\n";
-        $content .= "┌" . str_repeat('─', 40) . "┐\n";
-        $content .= "│" . str_pad("Subtotal:", 25) . str_pad(strip_tags(wc_price($order->get_subtotal())), 14, ' ', STR_PAD_LEFT) . "│\n";
-        
-        foreach ($order->get_fees() as $fee) {
-            $content .= "│" . str_pad($fee->get_name() . ":", 25) . str_pad(strip_tags(wc_price($fee->get_total())), 14, ' ', STR_PAD_LEFT) . "│\n";
-        }
-        
-        if ($order->get_total_shipping() > 0) {
-            $content .= "│" . str_pad("Shipping:", 25) . str_pad(strip_tags(wc_price($order->get_total_shipping())), 14, ' ', STR_PAD_LEFT) . "│\n";
-        }
-        
-        if ($order->get_total_tax() > 0) {
-            $content .= "│" . str_pad("Tax:", 25) . str_pad(strip_tags(wc_price($order->get_total_tax())), 14, ' ', STR_PAD_LEFT) . "│\n";
-        }
-        
-        $content .= "├" . str_repeat('─', 40) . "┤\n";
-        $content .= "│" . str_pad("TOTAL:", 25) . str_pad(strip_tags($order->get_formatted_order_total()), 14, ' ', STR_PAD_LEFT) . "│\n";
-        $content .= "└" . str_repeat('═', 40) . "┘\n\n";
+        $content .= str_repeat('-', 80) . "\n";
+        $content .= sprintf("%66s %13s\n", "TOTAL:", strip_tags($order->get_formatted_order_total()));
         
         // Payment instructions
         if ($order->needs_payment()) {
-            $content .= "PAYMENT INSTRUCTIONS:\n";
+            $content .= "\n\nPAYMENT INSTRUCTIONS:\n";
             $content .= str_repeat('=', 80) . "\n";
             $content .= "Please pay online using the following secure link:\n\n";
             $content .= $order->get_checkout_payment_url() . "\n\n";
-            $content .= "This link will redirect you to our secure payment processor.\n";
-            $content .= str_repeat('=', 80) . "\n\n";
         }
         
-        // Notes
+        // Notes and terms
         if ($notes) {
-            $content .= "NOTES:\n";
+            $content .= "\nNOTES:\n";
             $content .= str_repeat('-', 40) . "\n";
             $content .= wordwrap($notes, 76) . "\n\n";
         }
         
-        // Terms
         if ($terms) {
             $content .= "TERMS & CONDITIONS:\n";
             $content .= str_repeat('-', 40) . "\n";
             $content .= wordwrap($terms, 76) . "\n\n";
         }
         
-        // Footer
-        $content .= str_repeat('=', 80) . "\n";
-        $content .= "Generated by: " . $company_info['name'] . "\n";
-        $content .= "Powered by: WooCommerce Manual Invoices Pro\n";
-        $content .= "Date: " . current_time('Y-m-d H:i:s T') . "\n";
-        $content .= str_repeat('=', 80) . "\n";
-        
         return $content;
-    }
-    
-    /**
-     * Get PDF library status for admin display
-     * 
-     * @return array Library status information
-     */
-    public static function get_pdf_library_status() {
-        $status = array();
-        
-        foreach (self::$pdf_libraries as $key => $name) {
-            $method = 'is_' . $key . '_available';
-            $status[$key] = array(
-                'name' => $name,
-                'available' => self::$method(),
-                'description' => self::get_library_description($key)
-            );
-        }
-        
-        return $status;
-    }
-    
-    /**
-     * Get library description
-     */
-    private static function get_library_description($library) {
-        $descriptions = array(
-            'dompdf' => 'Best overall compatibility with HTML/CSS. Recommended for most users.',
-            'tcpdf' => 'Excellent for complex layouts and Unicode support. Good alternative to DomPDF.',
-            'mpdf' => 'Good balance of features and performance. Supports most CSS properties.',
-            'fpdf' => 'Basic PDF generation. Lightweight but limited styling options.'
-        );
-        
-        return isset($descriptions[$library]) ? $descriptions[$library] : '';
-    }
-    
-    /**
-     * Install recommended PDF library
-     */
-    public static function install_dompdf_via_composer() {
-        if (!function_exists('exec')) {
-            return new WP_Error('exec_disabled', 'exec() function is disabled on this server.');
-        }
-        
-        $composer_path = self::find_composer();
-        if (!$composer_path) {
-            return new WP_Error('composer_not_found', 'Composer not found on this server.');
-        }
-        
-        $plugin_dir = WC_MANUAL_INVOICES_PLUGIN_PATH;
-        $command = "cd {$plugin_dir} && {$composer_path} require dompdf/dompdf";
-        
-        exec($command, $output, $return_var);
-        
-        if ($return_var === 0) {
-            return true;
-        } else {
-            return new WP_Error('composer_failed', 'Failed to install DomPDF: ' . implode("\n", $output));
-        }
-    }
-    
-    /**
-     * Find composer executable
-     */
-    private static function find_composer() {
-        $possible_paths = array(
-            '/usr/local/bin/composer',
-            '/usr/bin/composer',
-            'composer',
-            'composer.phar'
-        );
-        
-        foreach ($possible_paths as $path) {
-            if (shell_exec("which {$path}")) {
-                return $path;
-            }
-        }
-        
-        return false;
     }
     
     // Keep all existing methods from the original class
@@ -1066,9 +728,6 @@ class WC_Manual_Invoice_PDF {
     
     /**
      * Get PDF download URL
-     * 
-     * @param int $order_id Order ID
-     * @return string|false Download URL or false
      */
     public static function get_pdf_download_url($order_id) {
         $order = wc_get_order($order_id);
@@ -1091,10 +750,6 @@ class WC_Manual_Invoice_PDF {
     
     /**
      * Get secure PDF download URL with authentication
-     * 
-     * @param int $order_id Order ID
-     * @param string $order_key Order key for security
-     * @return string|false Secure download URL or false
      */
     public static function get_secure_pdf_download_url($order_id, $order_key = '') {
         $order = wc_get_order($order_id);
@@ -1177,9 +832,6 @@ class WC_Manual_Invoice_PDF {
     
     /**
      * Delete PDF file
-     * 
-     * @param int $order_id Order ID
-     * @return bool Success
      */
     public static function delete_pdf($order_id) {
         $order = wc_get_order($order_id);
@@ -1206,32 +858,7 @@ class WC_Manual_Invoice_PDF {
     }
     
     /**
-     * Get PDF file size
-     * 
-     * @param int $order_id Order ID
-     * @return int|false File size in bytes or false
-     */
-    public static function get_pdf_size($order_id) {
-        $order = wc_get_order($order_id);
-        
-        if (!$order) {
-            return false;
-        }
-        
-        $pdf_path = $order->get_meta('_invoice_pdf_path');
-        
-        if ($pdf_path && file_exists($pdf_path)) {
-            return filesize($pdf_path);
-        }
-        
-        return false;
-    }
-    
-    /**
      * Check if PDF exists
-     * 
-     * @param int $order_id Order ID
-     * @return bool PDF exists
      */
     public static function pdf_exists($order_id) {
         $order = wc_get_order($order_id);
@@ -1246,60 +873,10 @@ class WC_Manual_Invoice_PDF {
     }
     
     /**
-     * Get PDF info
-     * 
-     * @param int $order_id Order ID
-     * @return array|false PDF info or false
+     * Get PDF library status for admin display
      */
-    public static function get_pdf_info($order_id) {
-        $order = wc_get_order($order_id);
-        
-        if (!$order || !self::pdf_exists($order_id)) {
-            return false;
-        }
-        
-        $pdf_path = $order->get_meta('_invoice_pdf_path');
-        $generated_date = $order->get_meta('_invoice_pdf_generated');
-        $pdf_library = $order->get_meta('_invoice_pdf_library');
-        
-        return array(
-            'path' => $pdf_path,
-            'size' => filesize($pdf_path),
-            'generated_date' => $generated_date,
-            'library' => $pdf_library ?: 'unknown',
-            'download_url' => self::get_pdf_download_url($order_id),
-            'secure_download_url' => self::get_secure_pdf_download_url($order_id, $order->get_order_key())
-        );
-    }
-    
-    /**
-     * Cleanup old PDF files
-     * 
-     * @param int $days_old Delete PDFs older than X days
-     * @return int Number of files deleted
-     */
-    public static function cleanup_old_pdfs($days_old = 90) {
-        $upload_dir = wp_upload_dir();
-        $pdf_dir = $upload_dir['basedir'] . '/wc-manual-invoices/';
-        
-        if (!is_dir($pdf_dir)) {
-            return 0;
-        }
-        
-        $cutoff_time = time() - ($days_old * 24 * 60 * 60);
-        $deleted_count = 0;
-        
-        $files = glob($pdf_dir . 'invoice-*.{pdf,txt}', GLOB_BRACE);
-        
-        foreach ($files as $file) {
-            if (filemtime($file) < $cutoff_time) {
-                if (unlink($file)) {
-                    $deleted_count++;
-                }
-            }
-        }
-        
-        return $deleted_count;
+    public static function get_pdf_library_status() {
+        return WC_Manual_Invoice_PDF_Installer::get_library_status();
     }
 }
 

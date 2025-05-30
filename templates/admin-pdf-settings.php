@@ -1,9 +1,9 @@
 <?php
 /**
- * Simplified PDF Settings Page Template
+ * Enhanced PDF Settings Page Template with Manual Installation Support
  * 
- * Focuses on bundled DomPDF with optional TCPDF alternative
- * Save as: templates/admin-pdf-settings-simple.php
+ * Replaces: templates/admin-pdf-settings.php
+ * Provides clear instructions for manual TCPDF installation
  */
 
 // Prevent direct access
@@ -12,26 +12,29 @@ if (!defined('ABSPATH')) {
 }
 
 // Get PDF library status
-$pdf_status = WC_Manual_Invoice_PDF_Manager::get_library_status();
-$available_library = WC_Manual_Invoice_PDF_Manager::get_available_library();
+$pdf_status = WC_Manual_Invoice_PDF_Installer::get_library_status();
+$available_library = WC_Manual_Invoice_PDF_Installer::get_best_available_library();
 
-// Handle TCPDF installation
+// Handle TCPDF installation attempt
 if (isset($_POST['install_tcpdf']) && wp_verify_nonce($_POST['_wpnonce'], 'install_tcpdf')) {
-    $result = WC_Manual_Invoice_PDF_Manager::install_tcpdf();
+    $result = WC_Manual_Invoice_PDF_Installer::install_tcpdf_automatically();
     if (is_wp_error($result)) {
         echo '<div class="notice notice-error"><p><strong>Installation Failed:</strong> ' . esc_html($result->get_error_message()) . '</p></div>';
     } else {
         echo '<div class="notice notice-success"><p><strong>Success!</strong> ' . esc_html($result['message']) . '</p></div>';
+        // Refresh status after installation
+        $pdf_status = WC_Manual_Invoice_PDF_Installer::get_library_status();
+        $available_library = WC_Manual_Invoice_PDF_Installer::get_best_available_library();
     }
 }
 
 // Handle test PDF generation
 if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_generation')) {
-    $test_result = WC_Manual_Invoice_PDF_Manager::test_pdf_generation();
+    $test_result = WC_Manual_Invoice_PDF_Installer::test_pdf_generation();
     if (is_wp_error($test_result)) {
         echo '<div class="notice notice-error"><p><strong>Test Failed:</strong> ' . esc_html($test_result->get_error_message()) . '</p></div>';
     } else {
-        echo '<div class="notice notice-success"><p><strong>Test Successful!</strong> PDF generated successfully. <a href="' . esc_url($test_result['download_url']) . '" target="_blank">Download Test PDF</a></p></div>';
+        echo '<div class="notice notice-success"><p><strong>Test Successful!</strong> PDF generated using ' . esc_html(strtoupper($test_result['library'])) . '. <a href="' . esc_url($test_result['download_url']) . '" target="_blank">Download Test PDF</a></p></div>';
     }
 }
 ?>
@@ -91,6 +94,9 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                         <p style="margin: 0; font-size: 14px;">
                             <?php printf(__('Using %s library for professional PDF invoice generation.', 'wc-manual-invoices'), '<strong>' . $pdf_status[$available_library]['name'] . '</strong>'); ?>
                         </p>
+                        <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.8;">
+                            <?php printf(__('Version: %s', 'wc-manual-invoices'), $pdf_status[$available_library]['version']); ?>
+                        </p>
                     </div>
                 </div>
             </div>
@@ -100,10 +106,10 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                     <span class="dashicons dashicons-warning" style="font-size: 24px;"></span>
                     <div>
                         <h3 style="margin: 0 0 5px 0; font-size: 18px;">
-                            <?php _e('⚠️ PDF Library Issue', 'wc-manual-invoices'); ?>
+                            <?php _e('⚠️ No PDF Library Available', 'wc-manual-invoices'); ?>
                         </h3>
                         <p style="margin: 0; font-size: 14px;">
-                            <?php _e('No PDF library found. Invoices will be generated as formatted text files.', 'wc-manual-invoices'); ?>
+                            <?php _e('Invoices will be generated as formatted text files. Install a PDF library for professional invoices.', 'wc-manual-invoices'); ?>
                         </p>
                     </div>
                 </div>
@@ -149,11 +155,23 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                     </ul>
                 </div>
                 
+                <?php if (!$pdf_status['dompdf']['available']): ?>
+                    <div style="background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0; margin-bottom: 10px; color: #856404; font-size: 14px;">Missing Files:</h4>
+                        <?php foreach ($pdf_status['dompdf']['missing_files'] as $file): ?>
+                            <div style="font-family: monospace; font-size: 12px; color: #856404;">❌ <?php echo esc_html($file); ?></div>
+                        <?php endforeach; ?>
+                    </div>
+                <?php endif; ?>
+                
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong style="color: <?php echo $pdf_status['dompdf']['available'] ? '#28a745' : '#dc3545'; ?>;">
-                            Status: <?php echo $pdf_status['dompdf']['available'] ? 'Ready' : 'Not Found'; ?>
+                            Status: <?php echo $pdf_status['dompdf']['available'] ? 'Ready' : 'Missing Files'; ?>
                         </strong>
+                        <?php if ($pdf_status['dompdf']['available']): ?>
+                            <br><small style="color: #666;">Version: <?php echo esc_html($pdf_status['dompdf']['version']); ?></small>
+                        <?php endif; ?>
                     </div>
                     
                     <?php if ($pdf_status['dompdf']['available']): ?>
@@ -162,15 +180,16 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                             <?php _e('Working', 'wc-manual-invoices'); ?>
                         </span>
                     <?php else: ?>
-                        <div style="color: #dc3545; font-size: 12px;">
-                            <strong>Issue:</strong> Library files missing from lib/dompdf/
+                        <div style="color: #dc3545; font-size: 12px; text-align: right;">
+                            <strong>Issue:</strong> DomPDF files missing<br>
+                            <small>Contact support for assistance</small>
                         </div>
                     <?php endif; ?>
                 </div>
             </div>
             
-            <!-- TCPDF (Optional) -->
-            <div style="border: 2px solid <?php echo $pdf_status['tcpdf']['available'] ? '#28a745' : '#6c757d'; ?>; border-radius: 8px; padding: 20px; position: relative; <?php echo !$pdf_status['tcpdf']['available'] ? 'opacity: 0.8;' : ''; ?>">
+            <!-- TCPDF (Manual Installation) -->
+            <div style="border: 2px solid <?php echo $pdf_status['tcpdf']['available'] ? '#28a745' : '#6c757d'; ?>; border-radius: 8px; padding: 20px; position: relative;">
                 <?php if ($pdf_status['tcpdf']['available']): ?>
                     <div style="position: absolute; top: -10px; right: 15px; background: #28a745; color: white; padding: 5px 10px; border-radius: 12px; font-size: 12px; font-weight: bold;">
                         ✓ INSTALLED
@@ -188,7 +207,7 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                 </p>
                 
                 <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
-                    <h4 style="margin-top: 0; margin-bottom: 10px; color: #6c757d; font-size: 14px;">When to use:</h4>
+                    <h4 style="margin-top: 0; margin-bottom: 10px; color: #6c757d; font-size: 14px;">When to use TCPDF:</h4>
                     <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #555;">
                         <li>🔧 Need complex Unicode support</li>
                         <li>🔧 Require specific PDF features</li>
@@ -197,21 +216,38 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                     </ul>
                 </div>
                 
+                <?php if (!$pdf_status['tcpdf']['available']): ?>
+                    <div style="background: #e7f3ff; border: 1px solid #bee5eb; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                        <h4 style="margin-top: 0; margin-bottom: 10px; color: #0c5460; font-size: 14px;">📁 Manual Installation Required:</h4>
+                        <div style="font-size: 13px; color: #0c5460;">
+                            <strong>Installation Path:</strong><br>
+                            <code style="background: #fff; padding: 2px 6px; border-radius: 3px; font-size: 11px; color: #333;">
+                                <?php echo esc_html(WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/'); ?>
+                            </code>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
                 <div style="display: flex; justify-content: space-between; align-items: center;">
                     <div>
                         <strong style="color: <?php echo $pdf_status['tcpdf']['available'] ? '#28a745' : '#6c757d'; ?>;">
                             Status: <?php echo $pdf_status['tcpdf']['available'] ? 'Installed' : 'Not Installed'; ?>
                         </strong>
+                        <?php if ($pdf_status['tcpdf']['available']): ?>
+                            <br><small style="color: #666;">Version: <?php echo esc_html($pdf_status['tcpdf']['version']); ?></small>
+                        <?php endif; ?>
                     </div>
                     
                     <?php if (!$pdf_status['tcpdf']['available']): ?>
-                        <form method="post" style="display: inline;">
-                            <?php wp_nonce_field('install_tcpdf'); ?>
-                            <button type="submit" name="install_tcpdf" class="button" style="background: #6c757d; color: white; border: none;">
-                                <span class="dashicons dashicons-download" style="margin-right: 5px;"></span>
-                                <?php _e('Install TCPDF', 'wc-manual-invoices'); ?>
-                            </button>
-                        </form>
+                        <div style="display: flex; gap: 8px;">
+                            <form method="post" style="display: inline;">
+                                <?php wp_nonce_field('install_tcpdf'); ?>
+                                <button type="submit" name="install_tcpdf" class="button" style="background: #0073aa; color: white; border: none; font-size: 12px;">
+                                    <span class="dashicons dashicons-download" style="margin-right: 4px; font-size: 14px;"></span>
+                                    <?php _e('Try Auto Install', 'wc-manual-invoices'); ?>
+                                </button>
+                            </form>
+                        </div>
                     <?php else: ?>
                         <span style="color: #28a745; font-weight: bold; display: flex; align-items: center; gap: 5px;">
                             <span class="dashicons dashicons-yes-alt"></span>
@@ -223,6 +259,96 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
             
         </div>
     </div>
+    
+    <!-- Manual Installation Instructions -->
+    <?php if (!$pdf_status['tcpdf']['available']): ?>
+    <div style="background: white; padding: 25px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 25px; border-left: 4px solid #0073aa;">
+        <h2 style="margin-top: 0; color: #96588a; display: flex; align-items: center; gap: 10px;">
+            <span class="dashicons dashicons-admin-page"></span>
+            <?php _e('Manual TCPDF Installation Guide', 'wc-manual-invoices'); ?>
+        </h2>
+        
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; margin-bottom: 20px;">
+            <h3 style="margin-top: 0; color: #0073aa;">📋 Step-by-Step Instructions:</h3>
+            
+            <div style="counter-reset: step-counter; padding-left: 0;">
+                <div style="counter-increment: step-counter; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #0073aa; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">1</div>
+                    <div>
+                        <strong>Download TCPDF</strong><br>
+                        <span style="color: #666;">Go to: </span>
+                        <a href="https://github.com/tecnickcom/TCPDF/archive/refs/heads/main.zip" target="_blank" style="color: #0073aa; text-decoration: none;">
+                            https://github.com/tecnickcom/TCPDF/archive/refs/heads/main.zip
+                        </a><br>
+                        <small style="color: #666;">This will download a ZIP file named "TCPDF-main.zip"</small>
+                    </div>
+                </div>
+                
+                <div style="counter-increment: step-counter; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #0073aa; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">2</div>
+                    <div>
+                        <strong>Extract the ZIP file</strong><br>
+                        <span style="color: #666;">Extract the downloaded ZIP to get the "TCPDF-main" folder</span>
+                    </div>
+                </div>
+                
+                <div style="counter-increment: step-counter; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #0073aa; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">3</div>
+                    <div>
+                        <strong>Rename the folder</strong><br>
+                        <span style="color: #666;">Rename "TCPDF-main" to "tcpdf" (all lowercase)</span>
+                    </div>
+                </div>
+                
+                <div style="counter-increment: step-counter; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #0073aa; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">4</div>
+                    <div>
+                        <strong>Upload to your server</strong><br>
+                        <span style="color: #666;">Upload the "tcpdf" folder to:</span><br>
+                        <code style="background: #fff; padding: 4px 8px; border-radius: 4px; color: #333; font-size: 12px; word-break: break-all;">
+                            <?php echo esc_html(WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/'); ?>
+                        </code><br>
+                        <small style="color: #666;">Use FTP, cPanel File Manager, or your hosting control panel</small>
+                    </div>
+                </div>
+                
+                <div style="counter-increment: step-counter; margin-bottom: 20px; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #0073aa; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">5</div>
+                    <div>
+                        <strong>Verify the installation</strong><br>
+                        <span style="color: #666;">The main file should be located at:</span><br>
+                        <code style="background: #fff; padding: 4px 8px; border-radius: 4px; color: #333; font-size: 12px; word-break: break-all;">
+                            <?php echo esc_html(WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/tcpdf.php'); ?>
+                        </code>
+                    </div>
+                </div>
+                
+                <div style="counter-increment: step-counter; margin-bottom: 0; display: flex; align-items: flex-start; gap: 15px;">
+                    <div style="background: #28a745; color: white; border-radius: 50%; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; font-weight: bold; flex-shrink: 0;">✓</div>
+                    <div>
+                        <strong>Test the installation</strong><br>
+                        <span style="color: #666;">Refresh this page and click "Test PDF" to verify TCPDF is working</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- File Structure Example -->
+        <div style="background: #fff; border: 1px solid #ddd; padding: 15px; border-radius: 6px;">
+            <h4 style="margin-top: 0; color: #333;">📂 Expected File Structure:</h4>
+            <pre style="background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 12px; color: #333; margin: 0; overflow-x: auto;">lib/
+├── dompdf/ (bundled)
+│   ├── autoload.inc.php
+│   └── ...
+└── tcpdf/ (manual install)
+    ├── tcpdf.php ← Main file
+    ├── config/
+    ├── fonts/
+    ├── include/
+    └── examples/</pre>
+        </div>
+    </div>
+    <?php endif; ?>
     
     <!-- Quick Actions -->
     <div style="background: white; padding: 25px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 25px;">
@@ -252,6 +378,45 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                 <span class="dashicons dashicons-update" style="margin-right: 8px;"></span>
                 <?php _e('Refresh Status', 'wc-manual-invoices'); ?>
             </button>
+            
+            <!-- Download TCPDF -->
+            <?php if (!$pdf_status['tcpdf']['available']): ?>
+            <a href="https://github.com/tecnickcom/TCPDF/archive/refs/heads/main.zip" target="_blank" class="button button-large" style="background: #28a745; color: white; border: none; padding: 12px 20px;">
+                <span class="dashicons dashicons-download" style="margin-right: 8px;"></span>
+                <?php _e('Download TCPDF', 'wc-manual-invoices'); ?>
+            </a>
+            <?php endif; ?>
+        </div>
+    </div>
+    
+    <!-- System Information -->
+    <div style="background: white; padding: 25px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 25px;">
+        <h2 style="margin-top: 0; color: #96588a; display: flex; align-items: center; gap: 10px;">
+            <span class="dashicons dashicons-admin-tools"></span>
+            <?php _e('System Information', 'wc-manual-invoices'); ?>
+        </h2>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            <div>
+                <h4 style="margin-top: 0; color: #333;">Server Environment</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #555;">
+                    <li><strong>PHP Version:</strong> <?php echo PHP_VERSION; ?></li>
+                    <li><strong>WordPress:</strong> <?php echo get_bloginfo('version'); ?></li>
+                    <li><strong>WooCommerce:</strong> <?php echo defined('WC_VERSION') ? WC_VERSION : 'Not detected'; ?></li>
+                    <li><strong>Memory Limit:</strong> <?php echo ini_get('memory_limit'); ?></li>
+                    <li><strong>Max Execution:</strong> <?php echo ini_get('max_execution_time'); ?>s</li>
+                </ul>
+            </div>
+            
+            <div>
+                <h4 style="margin-top: 0; color: #333;">PHP Extensions</h4>
+                <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #555;">
+                    <li><strong>ZipArchive:</strong> <?php echo class_exists('ZipArchive') ? '✅ Available' : '❌ Missing'; ?></li>
+                    <li><strong>cURL:</strong> <?php echo extension_loaded('curl') ? '✅ Available' : '❌ Missing'; ?></li>
+                    <li><strong>GD:</strong> <?php echo extension_loaded('gd') ? '✅ Available' : '❌ Missing'; ?></li>
+                    <li><strong>mbstring:</strong> <?php echo extension_loaded('mbstring') ? '✅ Available' : '❌ Missing'; ?></li>
+                </ul>
+            </div>
         </div>
     </div>
     
@@ -264,34 +429,42 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
         
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
             
+            <!-- Common Issues -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #ffc107;">
+                <h3 style="margin-top: 0; color: #856404; font-size: 16px;">
+                    <span class="dashicons dashicons-warning" style="margin-right: 5px;"></span>
+                    Common Issues
+                </h3>
+                <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #555;">
+                    <li>DomPDF should work out of the box - if not, the plugin files may be incomplete</li>
+                    <li>TCPDF requires manual installation - follow the step-by-step guide above</li>
+                    <li>Increase PHP memory limit to 256MB+ for large invoices</li>
+                    <li>Set max execution time to 120+ seconds for PDF generation</li>
+                    <li>Ensure proper file permissions on the lib/ directory</li>
+                </ul>
+            </div>
+            
             <!-- Troubleshooting -->
             <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #17a2b8;">
                 <h3 style="margin-top: 0; color: #17a2b8; font-size: 16px;">
                     <span class="dashicons dashicons-admin-tools" style="margin-right: 5px;"></span>
                     Troubleshooting
                 </h3>
-                <ul style="margin: 0; padding-left: 20px; font-size: 14px; color: #555;">
-                    <li>DomPDF should work out of the box - it's bundled with the plugin</li>
-                    <li>If DomPDF shows as "Not Found", check that lib/dompdf/ folder exists</li>
-                    <li>Increase PHP memory limit to 256MB+ for large invoices</li>
-                    <li>Set max execution time to 120+ seconds</li>
-                </ul>
-            </div>
-            
-            <!-- Manual Setup -->
-            <div style="background: #f8f9fa; padding: 20px; border-radius: 6px; border-left: 4px solid #28a745;">
-                <h3 style="margin-top: 0; color: #28a745; font-size: 16px;">
-                    <span class="dashicons dashicons-admin-users" style="margin-right: 5px;"></span>
-                    Manual Installation
-                </h3>
-                <p style="margin: 0; font-size: 14px; color: #555;">
-                    DomPDF should be bundled with your plugin download. If it's missing:
-                </p>
-                <ol style="margin: 10px 0 0 20px; padding: 0; font-size: 13px; color: #555;">
-                    <li>Download DomPDF from <a href="https://github.com/dompdf/dompdf/releases" target="_blank">GitHub</a></li>
-                    <li>Extract to <code>/wp-content/plugins/woocommerce-manual-invoices/lib/dompdf/</code></li>
-                    <li>Ensure autoload.inc.php file exists</li>
-                </ol>
+                <div style="font-size: 14px; color: #555;">
+                    <p><strong>If automatic TCPDF installation fails:</strong></p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>Server may not allow automatic downloads</li>
+                        <li>File permissions may be restricted</li>
+                        <li>Use the manual installation method instead</li>
+                    </ul>
+                    
+                    <p><strong>If PDF generation fails:</strong></p>
+                    <ul style="margin: 10px 0; padding-left: 20px;">
+                        <li>Check PHP error logs for specific errors</li>
+                        <li>Verify file paths and permissions</li>
+                        <li>Test with the "Test PDF" button above</li>
+                    </ul>
+                </div>
             </div>
             
             <!-- Support -->
@@ -300,14 +473,23 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
                     <span class="dashicons dashicons-phone" style="margin-right: 5px;"></span>
                     Get Support
                 </h3>
-                <p style="margin: 0 0 10px 0; font-size: 14px; color: #555;">
+                <p style="margin: 0 0 15px 0; font-size: 14px; color: #555;">
                     Need help with PDF generation? We're here to help!
                 </p>
-                <p style="margin: 0; font-size: 13px;">
-                    <a href="mailto:support@wbcomdesigns.com" style="color: #96588a; text-decoration: none;">
-                        📧 support@wbcomdesigns.com
-                    </a>
-                </p>
+                <div style="font-size: 13px;">
+                    <p style="margin: 0 0 10px 0;">
+                        <strong>Email Support:</strong><br>
+                        <a href="mailto:support@wbcomdesigns.com" style="color: #96588a; text-decoration: none;">
+                            📧 support@wbcomdesigns.com
+                        </a>
+                    </p>
+                    <p style="margin: 0;">
+                        <strong>Documentation:</strong><br>
+                        <a href="#" style="color: #96588a; text-decoration: none;">
+                            📚 View complete setup guide
+                        </a>
+                    </p>
+                </div>
             </div>
             
         </div>
@@ -320,10 +502,12 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
             WooCommerce Manual Invoices Pro
         </h3>
         <p style="margin-bottom: 10px; opacity: 0.9; font-size: 14px;">
-            Professional invoice management with bundled PDF generation
+            Professional invoice management with flexible PDF generation options
         </p>
         <p style="margin-bottom: 0; font-size: 12px; opacity: 0.8;">
-            Made with ❤️ by Wbcom Designs | Version <?php echo WC_MANUAL_INVOICES_VERSION; ?>
+            Made with ❤️ by Wbcom Designs | Version <?php echo WC_MANUAL_INVOICES_VERSION; ?> | 
+            DomPDF: <?php echo $pdf_status['dompdf']['available'] ? '✅' : '❌'; ?> | 
+            TCPDF: <?php echo $pdf_status['tcpdf']['available'] ? '✅' : '❌'; ?>
         </p>
     </div>
 </div>
@@ -360,6 +544,16 @@ if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_g
         justify-content: center;
     }
 }
+
+/* Loading animation */
+@keyframes rotation {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(359deg); }
+}
+
+.button .dashicons.spin {
+    animation: rotation 1s infinite linear;
+}
 </style>
 
 <script>
@@ -368,17 +562,95 @@ jQuery(document).ready(function($) {
     $('button[type="submit"]').on('click', function() {
         var $button = $(this);
         var originalText = $button.html();
+        var buttonText = $button.text().trim();
         
-        $button.prop('disabled', true)
-               .html('<span class="dashicons dashicons-update" style="animation: rotation 1s infinite linear; margin-right: 5px;"></span>Processing...');
+        // Don't show loading for refresh button
+        if (buttonText.indexOf('Refresh') !== -1) {
+            return;
+        }
+        
+        $button.prop('disabled', true);
+        
+        // Find the dashicon and make it spin
+        var $icon = $button.find('.dashicons');
+        if ($icon.length) {
+            $icon.addClass('spin');
+        }
+        
+        // Add "Processing..." text
+        if (buttonText.indexOf('Test') !== -1) {
+            $button.find('span:not(.dashicons)').text('Generating...');
+        } else if (buttonText.indexOf('Install') !== -1) {
+            $button.find('span:not(.dashicons)').text('Installing...');
+        }
         
         // Re-enable after form submission (backup)
         setTimeout(function() {
             $button.prop('disabled', false).html(originalText);
-        }, 10000);
+        }, 15000); // 15 seconds timeout
     });
     
-    // Add CSS for loading animation
-    $('<style>@keyframes rotation { from { transform: rotate(0deg); } to { transform: rotate(359deg); } }</style>').appendTo('head');
+    // Add tooltips for buttons
+    $('[title]').each(function() {
+        $(this).on('mouseenter', function() {
+            var title = $(this).attr('title');
+            var $tooltip = $('<div class="custom-tooltip">' + title + '</div>');
+            $('body').append($tooltip);
+            
+            var offset = $(this).offset();
+            $tooltip.css({
+                position: 'absolute',
+                top: offset.top - $tooltip.outerHeight() - 10,
+                left: offset.left + ($(this).outerWidth() / 2) - ($tooltip.outerWidth() / 2),
+                background: '#333',
+                color: '#fff',
+                padding: '8px 12px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                zIndex: 9999,
+                whiteSpace: 'nowrap'
+            });
+        });
+        
+        $(this).on('mouseleave', function() {
+            $('.custom-tooltip').remove();
+        });
+    });
+    
+    // Highlight important paths
+    $('code').each(function() {
+        var text = $(this).text();
+        if (text.indexOf('lib/tcpdf') !== -1 || text.indexOf('tcpdf.php') !== -1) {
+            $(this).css({
+                'background': '#fff3cd',
+                'border': '1px solid #ffeaa7',
+                'font-weight': 'bold'
+            });
+        }
+    });
+    
+    // Auto-scroll to installation guide if TCPDF is not available
+    <?php if (!$pdf_status['tcpdf']['available']): ?>
+    var $installGuide = $('h2:contains("Manual TCPDF Installation Guide")').parent();
+    if ($installGuide.length) {
+        // Add a subtle highlight animation
+        $installGuide.css({
+            'animation': 'highlight-pulse 3s ease-in-out',
+            'border': '2px solid #0073aa'
+        });
+    }
+    
+    // Add CSS for highlight animation
+    if (!$('#highlight-animation').length) {
+        $('head').append(`
+            <style id="highlight-animation">
+                @keyframes highlight-pulse {
+                    0%, 100% { border-color: #0073aa; }
+                    50% { border-color: #00a0d2; box-shadow: 0 0 20px rgba(0, 115, 170, 0.3); }
+                }
+            </style>
+        `);
+    }
+    <?php endif; ?>
 });
 </script>
