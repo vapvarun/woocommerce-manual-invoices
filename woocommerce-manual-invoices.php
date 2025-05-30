@@ -201,6 +201,7 @@ class WC_Manual_Invoices_Plugin {
      */
     public function admin_enqueue_scripts($hook) {
         if (strpos($hook, 'wc-manual-invoices') !== false) {
+            // Enqueue JavaScript - Correct assets path
             wp_enqueue_script(
                 'wc-manual-invoices-admin',
                 WC_MANUAL_INVOICES_PLUGIN_URL . 'assets/js/admin.js',
@@ -209,6 +210,7 @@ class WC_Manual_Invoices_Plugin {
                 true
             );
             
+            // Enqueue CSS - Correct assets path
             wp_enqueue_style(
                 'wc-manual-invoices-admin',
                 WC_MANUAL_INVOICES_PLUGIN_URL . 'assets/css/admin.css',
@@ -216,6 +218,7 @@ class WC_Manual_Invoices_Plugin {
                 WC_MANUAL_INVOICES_VERSION
             );
             
+            // Localize script for AJAX
             wp_localize_script('wc-manual-invoices-admin', 'wc_manual_invoices', array(
                 'ajax_url' => admin_url('admin-ajax.php'),
                 'nonce' => wp_create_nonce('wc_manual_invoices_nonce'),
@@ -224,7 +227,26 @@ class WC_Manual_Invoices_Plugin {
                 'thousand_separator' => wc_get_price_thousand_separator(),
                 'decimal_separator' => wc_get_price_decimal_separator(),
                 'price_decimals' => wc_get_price_decimals(),
+                // Add i18n strings for JavaScript
+                'i18n_select_customer' => __('Select a customer...', 'wc-manual-invoices'),
+                'i18n_search_customers' => __('Type at least 2 characters to search customers', 'wc-manual-invoices'),
+                'i18n_searching' => __('Searching...', 'wc-manual-invoices'),
+                'i18n_no_customers' => __('No customers found', 'wc-manual-invoices'),
+                'i18n_loading_more' => __('Loading more results...', 'wc-manual-invoices'),
+                'i18n_select_product' => __('Search for a product...', 'wc-manual-invoices'),
+                'i18n_search_products' => __('Type at least 2 characters to search products', 'wc-manual-invoices'),
+                'i18n_no_products' => __('No products found', 'wc-manual-invoices'),
+                'i18n_customer_required' => __('Please select a customer or enter email address.', 'wc-manual-invoices'),
+                'i18n_items_required' => __('Please add at least one item to the invoice.', 'wc-manual-invoices'),
+                'i18n_confirm_clone' => __('Are you sure you want to clone this invoice?', 'wc-manual-invoices'),
+                'i18n_confirm_delete' => __('Are you sure you want to delete this invoice? This action cannot be undone.', 'wc-manual-invoices'),
+                'i18n_ajax_error' => __('An error occurred. Please try again.', 'wc-manual-invoices'),
             ));
+            
+            // Also enqueue Select2 CSS if not already loaded
+            if (!wp_style_is('select2', 'enqueued')) {
+                wp_enqueue_style('select2', WC()->plugin_url() . '/assets/css/select2.css', array(), WC_VERSION);
+            }
         }
     }
     
@@ -290,11 +312,12 @@ class WC_Manual_Invoices_Plugin {
     public function display_pay_now_link($order) {
         if ($order->get_meta('_is_manual_invoice') && $order->needs_payment()) {
             $pay_url = $order->get_checkout_payment_url();
-            echo '<div class="manual-invoice-pay-link">';
-            echo '<h3>' . __('Pay Now Link', 'wc-manual-invoices') . '</h3>';
+            echo '<div class="manual-invoice-pay-link" style="margin: 20px 0; padding: 15px; background: #f9f9f9; border-left: 4px solid #96588a;">';
+            echo '<h3 style="margin-top: 0; color: #96588a;">' . __('Pay Now Link', 'wc-manual-invoices') . '</h3>';
             echo '<p><strong>' . __('Customer Pay URL:', 'wc-manual-invoices') . '</strong></p>';
-            echo '<input type="text" value="' . esc_attr($pay_url) . '" readonly style="width: 100%; max-width: 500px;">';
-            echo '<p><small>' . __('Send this link to the customer to complete payment.', 'wc-manual-invoices') . '</small></p>';
+            echo '<input type="text" value="' . esc_attr($pay_url) . '" readonly style="width: 100%; max-width: 500px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; font-size: 12px;">';
+            echo '<p><small style="color: #666;">' . __('Send this link to the customer to complete payment.', 'wc-manual-invoices') . '</small></p>';
+            echo '<p><a href="' . esc_url($pay_url) . '" target="_blank" class="button button-secondary">' . __('Test Payment Link', 'wc-manual-invoices') . '</a></p>';
             echo '</div>';
         }
     }
@@ -327,6 +350,30 @@ class WC_Manual_Invoices_Plugin {
         
         // Set activation flag
         update_option('wc_manual_invoices_activated', current_time('mysql'));
+        
+        // Set default settings
+        $default_settings = array(
+            'default_due_days' => 30,
+            'auto_send_email' => 'yes',
+            'auto_generate_pdf' => 'yes',
+            'invoice_prefix' => 'INV-',
+            'company_name' => '',
+            'company_address' => '',
+            'company_phone' => '',
+            'company_email' => '',
+            'company_logo' => '',
+            'invoice_footer' => '',
+            'reminder_enabled' => 'no',
+            'reminder_days' => array(7, 14, 30),
+            'late_fee_enabled' => 'no',
+            'late_fee_amount' => 0,
+            'late_fee_type' => 'fixed',
+        );
+        
+        // Only set defaults if no settings exist
+        if (!get_option('wc_manual_invoices_settings')) {
+            update_option('wc_manual_invoices_settings', $default_settings);
+        }
     }
     
     /**
@@ -364,6 +411,9 @@ class WC_Manual_Invoices_Plugin {
     public function deactivate() {
         // Clean up if needed
         flush_rewrite_rules();
+        
+        // Remove activation flag
+        delete_option('wc_manual_invoices_activated');
     }
     
     /**

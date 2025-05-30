@@ -111,86 +111,122 @@
          * Initialize product select with Select2 and AJAX search
          */
         initProductSelect: function() {
-            $(document).on('focus', '.product-select', function() {
-                var $this = $(this);
-                
-                if (!$this.hasClass('select2-hidden-accessible')) {
-                    $this.select2({
-                        placeholder: wc_manual_invoices.i18n_select_product || 'Search for a product...',
-                        allowClear: true,
-                        minimumInputLength: 2,
-                        width: '100%',
-                        ajax: {
-                            url: wc_manual_invoices.ajax_url,
-                            type: 'POST',
-                            dataType: 'json',
-                            delay: 250,
-                            data: function(params) {
-                                return {
-                                    action: 'wc_manual_invoice_search_products',
-                                    term: params.term,
-                                    page: params.page || 1,
-                                    nonce: wc_manual_invoices.nonce
-                                };
-                            },
-                            processResults: function(data, params) {
-                                params.page = params.page || 1;
-                                
-                                return {
-                                    results: data.results || [],
-                                    pagination: {
-                                        more: data.pagination && data.pagination.more
-                                    }
-                                };
-                            },
-                            cache: true,
-                            error: function(xhr, status, error) {
-                                console.error('Product search error:', error);
-                                WCManualInvoices.showNotice('error', 'Failed to search products. Please try again.');
-                            }
-                        },
-                        language: {
-                            inputTooShort: function() {
-                                return wc_manual_invoices.i18n_search_products || 'Type at least 2 characters to search products';
-                            },
-                            searching: function() {
-                                return wc_manual_invoices.i18n_searching || 'Searching products...';
-                            },
-                            noResults: function() {
-                                return wc_manual_invoices.i18n_no_products || 'No products found';
-                            }
-                        },
-                        escapeMarkup: function(markup) {
-                            return markup;
-                        },
-                        templateResult: function(product) {
-                            if (product.loading) {
-                                return product.text;
-                            }
-                            
-                            var template = '<div class="product-result">';
-                            template += '<div class="product-name">' + product.name + '</div>';
-                            template += '<div class="product-price">' + product.price_formatted + '</div>';
-                            if (product.sku) {
-                                template += '<div class="product-sku">SKU: ' + product.sku + '</div>';
-                            }
-                            if (product.stock_status) {
-                                template += '<div class="product-stock ' + product.stock_status + '">' + product.stock_text + '</div>';
-                            }
-                            template += '</div>';
-                            
-                            return $(template);
-                        },
-                        templateSelection: function(product) {
-                            return product.name || product.text;
+            // Initialize existing product selects
+            $('.product-select').each(function() {
+                WCManualInvoices.setupProductSelect($(this));
+            });
+            
+            // Initialize new product selects when rows are added
+            $(document).on('DOMNodeInserted', '.invoice-product-row', function() {
+                var $select = $(this).find('.product-select');
+                if ($select.length && !$select.hasClass('select2-hidden-accessible')) {
+                    WCManualInvoices.setupProductSelect($select);
+                }
+            });
+        },
+        
+        /**
+         * Setup individual product select with Select2
+         */
+        setupProductSelect: function($element) {
+            if ($element.hasClass('select2-hidden-accessible')) {
+                return; // Already initialized
+            }
+            
+            $element.select2({
+                placeholder: wc_manual_invoices.i18n_select_product || 'Search for a product...',
+                allowClear: true,
+                minimumInputLength: 1, // Reduced from 2 to 1 for better UX
+                width: '100%',
+                ajax: {
+                    url: wc_manual_invoices.ajax_url,
+                    type: 'POST',
+                    dataType: 'json',
+                    delay: 300,
+                    data: function(params) {
+                        return {
+                            action: 'wc_manual_invoice_search_products',
+                            term: params.term,
+                            page: params.page || 1,
+                            nonce: wc_manual_invoices.nonce
+                        };
+                    },
+                    processResults: function(data, params) {
+                        params.page = params.page || 1;
+                        
+                        console.log('Product search response:', data); // Debug log
+                        
+                        if (data && data.results) {
+                            return {
+                                results: data.results,
+                                pagination: {
+                                    more: data.pagination && data.pagination.more
+                                }
+                            };
+                        } else {
+                            return {
+                                results: [],
+                                pagination: {
+                                    more: false
+                                }
+                            };
                         }
-                    }).on('select2:select', function(e) {
-                        var product = e.params.data;
-                        var $row = $(this).closest('.invoice-product-row');
-                        if (product.id) {
-                            WCManualInvoices.loadProductDetails(product.id, $row);
-                        }
-                    });
+                    },
+                    cache: true,
+                    error: function(xhr, status, error) {
+                        console.error('Product search error:', xhr.responseText);
+                        console.error('Status:', status);
+                        console.error('Error:', error);
+                        WCManualInvoices.showNotice('error', 'Failed to search products. Please check console for details.');
+                    }
+                },
+                language: {
+                    inputTooShort: function() {
+                        return wc_manual_invoices.i18n_search_products || 'Type at least 1 character to search products';
+                    },
+                    searching: function() {
+                        return wc_manual_invoices.i18n_searching || 'Searching products...';
+                    },
+                    noResults: function() {
+                        return wc_manual_invoices.i18n_no_products || 'No products found';
+                    },
+                    errorLoading: function() {
+                        return 'Error loading results. Please try again.';
+                    }
+                },
+                escapeMarkup: function(markup) {
+                    return markup;
+                },
+                templateResult: function(product) {
+                    if (product.loading) {
+                        return product.text;
+                    }
+                    
+                    if (!product.name) {
+                        return product.text || 'Unknown Product';
+                    }
+                    
+                    var template = '<div class="product-result">';
+                    template += '<div class="product-name">' + (product.name || '') + '</div>';
+                    template += '<div class="product-price">' + (product.price_formatted || '') + '</div>';
+                    if (product.sku) {
+                        template += '<div class="product-sku">SKU: ' + product.sku + '</div>';
+                    }
+                    if (product.stock_status) {
+                        template += '<div class="product-stock ' + product.stock_status + '">' + (product.stock_text || '') + '</div>';
+                    }
+                    template += '</div>';
+                    
+                    return $(template);
+                },
+                templateSelection: function(product) {
+                    return product.name || product.text || 'Select Product';
+                }
+            }).on('select2:select', function(e) {
+                var product = e.params.data;
+                var $row = $(this).closest('.invoice-product-row');
+                if (product.id) {
+                    WCManualInvoices.loadProductDetails(product.id, $row);
                 }
             });
         },
@@ -238,7 +274,15 @@
                     $template.find('.product-select').select2('destroy');
                 }
                 
+                // Reset the select element
+                $template.find('.product-select').removeClass('select2-hidden-accessible');
+                $template.find('.select2-container').remove();
+                
                 $container.append($template);
+                
+                // Initialize Select2 on the new row
+                WCManualInvoices.setupProductSelect($template.find('.product-select'));
+                
                 WCManualInvoices.updateRowNumbers();
             });
             
