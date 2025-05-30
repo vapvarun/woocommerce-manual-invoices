@@ -1,0 +1,93 @@
+{
+    "name": "wbcomdesigns/woocommerce-manual-invoices",
+    "description": "WooCommerce Manual Invoices Pro - Professional invoice management with PDF generation",
+    "type": "wordpress-plugin",
+    "keywords": ["wordpress", "woocommerce", "invoice", "pdf", "billing"],
+    "license": "GPL-2.0-or-later",
+    "authors": [
+        {
+            "name": "Wbcom Designs",
+            "email": "support@wbcomdesigns.com",
+            "homepage": "https://wbcomdesigns.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.0",
+        "dompdf/dompdf": "*"
+    },
+    "suggest": {
+        "dompdf/dompdf": "^2.0 - Recommended for HTML to PDF conversion with excellent CSS support",
+        "tecnickcom/tcpdf": "^6.6 - Alternative PDF library with Unicode and complex layout support", 
+        "mpdf/mpdf": "^8.1 - Another excellent PDF library with good performance",
+        "setasign/fpdf": "^1.8.6 - Lightweight PDF generation for basic layouts"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.0",
+        "squizlabs/php_codesniffer": "^3.6",
+        "wp-coding-standards/wpcs": "^2.3"
+    },
+    "autoload": {
+        "psr-4": {
+            "WbcomDesigns\\WooCommerceManualInvoices\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WbcomDesigns\\WooCommerceManualInvoices\\Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "install-pdf-basic": [
+            "composer require dompdf/dompdf",
+            "@php -r \"echo 'DomPDF installed successfully for basic PDF generation\\n';\""
+        ],
+        "install-pdf-advanced": [
+            "composer require dompdf/dompdf",
+            "composer require tecnickcom/tcpdf", 
+            "@php -r \"echo 'DomPDF and TCPDF installed for advanced PDF features\\n';\""
+        ],
+        "install-pdf-all": [
+            "composer require dompdf/dompdf",
+            "composer require tecnickcom/tcpdf",
+            "composer require mpdf/mpdf",
+            "@php -r \"echo 'All major PDF libraries installed\\n';\""
+        ],
+        "test": "phpunit",
+        "cs": "phpcs --standard=WordPress --extensions=php .",
+        "cbf": "phpcbf --standard=WordPress --extensions=php .",
+        "post-install-cmd": [
+            "@install-directories",
+            "@set-permissions"
+        ],
+        "install-directories": [
+            "@php -r \"if (!is_dir('uploads/wc-manual-invoices')) { mkdir('uploads/wc-manual-invoices', 0755, true); echo 'Created uploads directory\\n'; }\""
+        ],
+        "set-permissions": [
+            "@php -r \"if (is_dir('uploads/wc-manual-invoices')) { chmod('uploads/wc-manual-invoices', 0755); echo 'Set directory permissions\\n'; }\""
+        ]
+    },
+    "extra": {
+        "installer-name": "woocommerce-manual-invoices",
+        "wordpress-install-dir": "wp-content/plugins/woocommerce-manual-invoices"
+    },
+    "config": {
+        "optimize-autoloader": true,
+        "classmap-authoritative": true,
+        "apcu-autoloader": true,
+        "sort-packages": true,
+        "allow-plugins": {
+            "composer/installers": true,
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        },
+        "secure-http": false,
+        "disable-tls": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "repositories": {
+        "packagist": {
+            "type": "composer",
+            "url": "http://packagist.org"
+        }
+    }
+}

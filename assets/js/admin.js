@@ -1,5 +1,6 @@
 /**
  * WooCommerce Manual Invoices - Enhanced Admin JavaScript with Select2
+ * FIXED: Product search functionality
  */
 
 (function($) {
@@ -24,6 +25,8 @@
          * Initialize customer select with Select2 and AJAX search
          */
         initCustomerSelect: function() {
+            if (!$('#customer_select').length) return;
+            
             $('#customer_select').select2({
                 placeholder: wc_manual_invoices.i18n_select_customer || 'Select a customer...',
                 allowClear: true,
@@ -126,17 +129,19 @@
         },
         
         /**
-         * Setup individual product select with Select2
+         * FIXED: Setup individual product select with Select2
          */
         setupProductSelect: function($element) {
-            if ($element.hasClass('select2-hidden-accessible')) {
-                return; // Already initialized
+            if (!$element.length || $element.hasClass('select2-hidden-accessible')) {
+                return; // Already initialized or element doesn't exist
             }
+            
+            console.log('Initializing product select for element:', $element);
             
             $element.select2({
                 placeholder: wc_manual_invoices.i18n_select_product || 'Search for a product...',
                 allowClear: true,
-                minimumInputLength: 1, // Reduced from 2 to 1 for better UX
+                minimumInputLength: 1,
                 width: '100%',
                 ajax: {
                     url: wc_manual_invoices.ajax_url,
@@ -144,6 +149,13 @@
                     dataType: 'json',
                     delay: 300,
                     data: function(params) {
+                        console.log('Sending product search request:', {
+                            action: 'wc_manual_invoice_search_products',
+                            term: params.term,
+                            page: params.page || 1,
+                            nonce: wc_manual_invoices.nonce
+                        });
+                        
                         return {
                             action: 'wc_manual_invoice_search_products',
                             term: params.term,
@@ -152,32 +164,60 @@
                         };
                     },
                     processResults: function(data, params) {
+                        console.log('Product search response received:', data);
+                        
                         params.page = params.page || 1;
                         
-                        console.log('Product search response:', data); // Debug log
+                        // FIXED: Handle both success and direct data formats
+                        var results = [];
+                        var hasMore = false;
                         
-                        if (data && data.results) {
-                            return {
-                                results: data.results,
-                                pagination: {
-                                    more: data.pagination && data.pagination.more
-                                }
-                            };
+                        if (data && data.success !== undefined) {
+                            // WordPress AJAX success format
+                            if (data.success && data.data) {
+                                results = data.data.results || [];
+                                hasMore = data.data.pagination && data.data.pagination.more;
+                            } else {
+                                console.error('Product search failed:', data.data);
+                                WCManualInvoices.showNotice('error', 'Product search failed: ' + (data.data ? data.data.message : 'Unknown error'));
+                            }
+                        } else if (data && data.results) {
+                            // Direct format (fallback)
+                            results = data.results;
+                            hasMore = data.pagination && data.pagination.more;
                         } else {
-                            return {
-                                results: [],
-                                pagination: {
-                                    more: false
-                                }
-                            };
+                            console.error('Unexpected response format:', data);
                         }
+                        
+                        console.log('Processed results:', results);
+                        
+                        return {
+                            results: results,
+                            pagination: {
+                                more: hasMore
+                            }
+                        };
                     },
                     cache: true,
                     error: function(xhr, status, error) {
-                        console.error('Product search error:', xhr.responseText);
-                        console.error('Status:', status);
-                        console.error('Error:', error);
-                        WCManualInvoices.showNotice('error', 'Failed to search products. Please check console for details.');
+                        console.error('Product search AJAX error:', {
+                            xhr: xhr,
+                            status: status,
+                            error: error,
+                            responseText: xhr.responseText
+                        });
+                        
+                        var errorMessage = 'Failed to search products.';
+                        if (xhr.responseText) {
+                            try {
+                                var response = JSON.parse(xhr.responseText);
+                                errorMessage = response.data ? response.data.message : errorMessage;
+                            } catch (e) {
+                                errorMessage += ' Server response: ' + xhr.responseText.substring(0, 100);
+                            }
+                        }
+                        
+                        WCManualInvoices.showNotice('error', errorMessage);
                     }
                 },
                 language: {
@@ -229,6 +269,8 @@
                     WCManualInvoices.loadProductDetails(product.id, $row);
                 }
             });
+            
+            console.log('Product select initialized successfully');
         },
         
         /**
@@ -503,9 +545,11 @@
         },
         
         /**
-         * Load product details
+         * FIXED: Load product details
          */
         loadProductDetails: function(productId, $row) {
+            console.log('Loading product details for ID:', productId);
+            
             $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -515,16 +559,22 @@
                     nonce: wc_manual_invoices.nonce
                 },
                 success: function(response) {
+                    console.log('Product details response:', response);
+                    
                     if (response.success) {
                         var product = response.data;
-                        var quantity = $row.find('input[name*="product_quantities"]').val() || 1;
-                        var total = parseFloat(product.price) * parseInt(quantity);
+                        var quantity = parseInt($row.find('input[name*="product_quantities"]').val()) || 1;
+                        var unitPrice = parseFloat(product.price) || 0;
+                        var total = unitPrice * quantity;
                         
                         $row.find('input[name*="product_totals"]').val(total.toFixed(2));
                         WCManualInvoices.calculateTotals();
+                    } else {
+                        console.error('Failed to load product details:', response.data);
                     }
                 },
-                error: function() {
+                error: function(xhr, status, error) {
+                    console.error('Product details AJAX error:', error);
                     WCManualInvoices.showNotice('error', 'Failed to load product details.');
                 }
             });
@@ -814,6 +864,10 @@
     
     // Initialize when document is ready
     $(document).ready(function() {
+        console.log('WC Manual Invoices: Initializing admin JavaScript');
+        console.log('AJAX URL:', wc_manual_invoices.ajax_url);
+        console.log('Nonce:', wc_manual_invoices.nonce);
+        
         WCManualInvoices.init();
         
         // Add some styles for Select2 results
@@ -862,6 +916,32 @@
                 }
                 </style>
             `);
+        }
+        
+        // FIXED: Add debug button for testing product search
+        if (window.location.search.indexOf('debug=1') !== -1) {
+            $('body').append('<button id="test-product-search" style="position: fixed; top: 50px; right: 20px; z-index: 9999;">Test Product Search</button>');
+            
+            $('#test-product-search').on('click', function() {
+                $.ajax({
+                    url: wc_manual_invoices.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'wc_manual_invoice_search_products',
+                        term: 'a',
+                        page: 1,
+                        nonce: wc_manual_invoices.nonce
+                    },
+                    success: function(response) {
+                        console.log('Debug product search result:', response);
+                        alert('Product search test completed. Check console for results.');
+                    },
+                    error: function(xhr, status, error) {
+                        console.error('Debug product search error:', xhr.responseText);
+                        alert('Product search test failed. Check console for error.');
+                    }
+                });
+            });
         }
     });
     

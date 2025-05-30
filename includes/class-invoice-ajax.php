@@ -3,6 +3,7 @@
  * Enhanced AJAX Handler for Manual Invoices
  * 
  * Handles AJAX requests for invoice management with pagination and large database support
+ * FIXED: Product search functionality
  */
 
 // Prevent direct access
@@ -190,141 +191,188 @@ class WC_Manual_Invoice_AJAX {
     }
     
     /**
-     * Enhanced product search with pagination and stock status
+     * FIXED: Enhanced product search with pagination and stock status
      */
     public function search_products() {
-        // Check nonce
-        if (!wp_verify_nonce($_POST['nonce'], 'wc_manual_invoices_nonce')) {
-            wp_die('Security check failed');
+        // Verify nonce - FIXED: Check if nonce exists first
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wc_manual_invoices_nonce')) {
+            wp_send_json_error(array('message' => 'Security check failed'));
+            return;
         }
         
         // Check permissions
         if (!current_user_can('manage_woocommerce')) {
-            wp_die('Insufficient permissions');
+            wp_send_json_error(array('message' => 'Insufficient permissions'));
+            return;
         }
         
-        $term = sanitize_text_field($_POST['term']);
-        $page = intval($_POST['page'] ?? 1);
+        // FIXED: Get search term safely
+        $term = isset($_POST['term']) ? sanitize_text_field($_POST['term']) : '';
+        $page = isset($_POST['page']) ? intval($_POST['page']) : 1;
         $per_page = 20;
         $offset = ($page - 1) * $per_page;
         
         $products = array();
         $more_results = false;
         
-        if (strlen($term) >= 2) {
-            // Search products using WP_Query for better performance
-            $args = array(
-                'post_type' => 'product',
-                'post_status' => 'publish',
-                'posts_per_page' => $per_page + 1, // Get one extra to check for more results
-                'offset' => $offset,
-                'orderby' => 'title',
-                'order' => 'ASC',
-                's' => $term,
-                'meta_query' => array(
-                    'relation' => 'OR',
-                    array(
-                        'key' => '_sku',
-                        'value' => $term,
-                        'compare' => 'LIKE'
+        // FIXED: Reduce minimum search length to 1 character for better UX
+        if (strlen($term) >= 1) {
+            try {
+                // FIXED: Better product search query
+                $args = array(
+                    'post_type' => 'product',
+                    'post_status' => 'publish',
+                    'posts_per_page' => $per_page + 1, // Get one extra to check for more results
+                    'offset' => $offset,
+                    'orderby' => 'title',
+                    'order' => 'ASC',
+                    'meta_query' => array(
+                        'relation' => 'OR',
+                        array(
+                            'key' => '_sku',
+                            'value' => $term,
+                            'compare' => 'LIKE'
+                        ),
                     ),
-                ),
-            );
-            
-            $product_query = new WP_Query($args);
-            $found_products = $product_query->posts;
-            
-            // Check if there are more results
-            if (count($found_products) > $per_page) {
-                $more_results = true;
-                array_pop($found_products); // Remove the extra product
-            }
-            
-            foreach ($found_products as $post) {
-                try {
-                    $product = wc_get_product($post->ID);
-                    
-                    if (!$product || !$product->is_purchasable()) {
-                        continue;
-                    }
-                    
-                    // Get stock status
-                    $stock_status = $product->get_stock_status();
-                    $stock_text = '';
-                    
-                    if ($product->managing_stock()) {
-                        $stock_quantity = $product->get_stock_quantity();
-                        if ($stock_quantity !== null) {
-                            $stock_text = sprintf(__('%d in stock', 'wc-manual-invoices'), $stock_quantity);
-                        }
-                    } else {
-                        $stock_text = $stock_status === 'instock' ? __('In stock', 'wc-manual-invoices') : __('Out of stock', 'wc-manual-invoices');
-                    }
-                    
-                    // Format price
-                    $price = $product->get_price();
-                    $price_formatted = $price ? wc_price($price) : __('Free', 'wc-manual-invoices');
-                    
-                    $products[] = array(
-                        'id' => $product->get_id(),
-                        'text' => sprintf('%s - %s', $product->get_name(), $price_formatted),
-                        'name' => $product->get_name(),
-                        'price' => floatval($price),
-                        'price_formatted' => $price_formatted,
-                        'sku' => $product->get_sku(),
-                        'description' => $product->get_short_description(),
-                        'stock_status' => $stock_status,
-                        'stock_text' => $stock_text,
-                        'type' => $product->get_type(),
-                    );
-                } catch (Exception $e) {
-                    // Skip products that can't be loaded
-                    continue;
+                );
+                
+                // FIXED: Add title search separately to avoid conflicts
+                if (!empty($term)) {
+                    $args['s'] = $term;
                 }
-            }
-            
-            // Also search by SKU exactly
-            $sku_product = wc_get_product_id_by_sku($term);
-            if ($sku_product && !in_array($sku_product, array_column($products, 'id'))) {
-                try {
-                    $product = wc_get_product($sku_product);
-                    if ($product && $product->is_purchasable()) {
+                
+                $product_query = new WP_Query($args);
+                $found_products = $product_query->posts;
+                
+                // Check if there are more results
+                if (count($found_products) > $per_page) {
+                    $more_results = true;
+                    array_pop($found_products); // Remove the extra product
+                }
+                
+                foreach ($found_products as $post) {
+                    try {
+                        $product = wc_get_product($post->ID);
+                        
+                        // FIXED: Better product validation
+                        if (!$product || !is_object($product)) {
+                            continue;
+                        }
+                        
+                        // Skip variable products, only allow simple and variations
+                        if ($product->is_type('variable')) {
+                            continue;
+                        }
+                        
+                        // Get product price
+                        $price = $product->get_price();
+                        if ($price === '' || $price === null) {
+                            $price = 0;
+                        }
+                        
+                        // Format price for display
+                        $price_formatted = $price > 0 ? wc_price($price) : __('Free', 'wc-manual-invoices');
+                        
+                        // Get stock status
                         $stock_status = $product->get_stock_status();
                         $stock_text = '';
                         
                         if ($product->managing_stock()) {
                             $stock_quantity = $product->get_stock_quantity();
-                            if ($stock_quantity !== null) {
+                            if ($stock_quantity !== null && $stock_quantity > 0) {
                                 $stock_text = sprintf(__('%d in stock', 'wc-manual-invoices'), $stock_quantity);
+                            } else {
+                                $stock_text = __('Out of stock', 'wc-manual-invoices');
+                                $stock_status = 'outofstock';
                             }
                         } else {
                             $stock_text = $stock_status === 'instock' ? __('In stock', 'wc-manual-invoices') : __('Out of stock', 'wc-manual-invoices');
                         }
                         
-                        $price = $product->get_price();
-                        $price_formatted = $price ? wc_price($price) : __('Free', 'wc-manual-invoices');
+                        // Get product SKU
+                        $sku = $product->get_sku();
                         
-                        // Add SKU match at the beginning
-                        array_unshift($products, array(
+                        // FIXED: Build proper product data array
+                        $product_data = array(
                             'id' => $product->get_id(),
                             'text' => sprintf('%s - %s', $product->get_name(), $price_formatted),
                             'name' => $product->get_name(),
-                            'price' => floatval($price),
+                            'price' => (float) $price,
                             'price_formatted' => $price_formatted,
-                            'sku' => $product->get_sku(),
-                            'description' => $product->get_short_description(),
+                            'sku' => $sku,
+                            'description' => wp_strip_all_tags($product->get_short_description()),
                             'stock_status' => $stock_status,
                             'stock_text' => $stock_text,
                             'type' => $product->get_type(),
-                        ));
+                        );
+                        
+                        $products[] = $product_data;
+                        
+                    } catch (Exception $e) {
+                        // Log error but continue
+                        error_log('WC Manual Invoices: Product search error for product ID ' . $post->ID . ': ' . $e->getMessage());
+                        continue;
                     }
-                } catch (Exception $e) {
-                    // Skip if product can't be loaded
                 }
+                
+                // FIXED: Also search by SKU exactly if no results found by title
+                if (empty($products)) {
+                    $sku_product_id = wc_get_product_id_by_sku($term);
+                    if ($sku_product_id) {
+                        try {
+                            $product = wc_get_product($sku_product_id);
+                            if ($product && is_object($product) && !$product->is_type('variable')) {
+                                $price = $product->get_price();
+                                if ($price === '' || $price === null) {
+                                    $price = 0;
+                                }
+                                
+                                $price_formatted = $price > 0 ? wc_price($price) : __('Free', 'wc-manual-invoices');
+                                $stock_status = $product->get_stock_status();
+                                $stock_text = $stock_status === 'instock' ? __('In stock', 'wc-manual-invoices') : __('Out of stock', 'wc-manual-invoices');
+                                
+                                if ($product->managing_stock()) {
+                                    $stock_quantity = $product->get_stock_quantity();
+                                    if ($stock_quantity !== null && $stock_quantity > 0) {
+                                        $stock_text = sprintf(__('%d in stock', 'wc-manual-invoices'), $stock_quantity);
+                                    } else {
+                                        $stock_text = __('Out of stock', 'wc-manual-invoices');
+                                        $stock_status = 'outofstock';
+                                    }
+                                }
+                                
+                                // Add SKU match at the beginning
+                                array_unshift($products, array(
+                                    'id' => $product->get_id(),
+                                    'text' => sprintf('%s - %s (SKU: %s)', $product->get_name(), $price_formatted, $product->get_sku()),
+                                    'name' => $product->get_name(),
+                                    'price' => (float) $price,
+                                    'price_formatted' => $price_formatted,
+                                    'sku' => $product->get_sku(),
+                                    'description' => wp_strip_all_tags($product->get_short_description()),
+                                    'stock_status' => $stock_status,
+                                    'stock_text' => $stock_text,
+                                    'type' => $product->get_type(),
+                                ));
+                            }
+                        } catch (Exception $e) {
+                            error_log('WC Manual Invoices: SKU search error: ' . $e->getMessage());
+                        }
+                    }
+                }
+                
+            } catch (Exception $e) {
+                error_log('WC Manual Invoices: Product search query error: ' . $e->getMessage());
+                wp_send_json_error(array(
+                    'message' => 'Product search failed. Please try again.',
+                    'error' => $e->getMessage()
+                ));
+                return;
             }
         }
         
-        wp_send_json(array(
+        // FIXED: Always send proper JSON response
+        wp_send_json_success(array(
             'results' => $products,
             'pagination' => array(
                 'more' => $more_results
