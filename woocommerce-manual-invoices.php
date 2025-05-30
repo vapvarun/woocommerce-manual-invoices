@@ -120,12 +120,15 @@ class WC_Manual_Invoices_Plugin {
      * Include required files
      */
     private function includes() {
-        // Core classes
+    // Core classes
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-generator.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-dashboard.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-pdf.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-ajax.php';
         require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-settings.php';
+        
+        // ADD THIS LINE - PDF Installer class
+        require_once WC_MANUAL_INVOICES_PLUGIN_PATH . 'includes/class-invoice-pdf-installer.php';
         
         // Load email class after WooCommerce emails are initialized
         add_action('woocommerce_init', array($this, 'load_email_class'));
@@ -194,6 +197,29 @@ class WC_Manual_Invoices_Plugin {
             'wc-manual-invoices-settings',
             array('WC_Manual_Invoices_Settings', 'display_settings')
         );
+        
+        // ADD THIS - PDF Settings page
+        add_submenu_page(
+            'woocommerce',
+            __('PDF Settings', 'wc-manual-invoices'),
+            __('PDF Settings', 'wc-manual-invoices'),
+            'manage_woocommerce',
+            'wc-manual-invoices-pdf-settings',
+            array($this, 'display_pdf_settings_page')
+        );
+    }
+    
+    /**
+     * Display PDF settings page
+     */
+    public function display_pdf_settings_page() {
+        // Check user permissions
+        if (!current_user_can('manage_woocommerce')) {
+            wp_die(__('You do not have sufficient permissions to access this page.', 'wc-manual-invoices'));
+        }
+        
+        // Include the PDF settings template
+        include WC_MANUAL_INVOICES_PLUGIN_PATH . 'templates/admin-pdf-settings.php';
     }
     
     /**

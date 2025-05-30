@@ -75,6 +75,11 @@ foreach ($invoices as $order) {
                     <span class="dashicons dashicons-admin-generic" style="margin-right: 6px;"></span>
                     <?php _e('Settings', 'wc-manual-invoices'); ?>
                 </a>
+                <!-- ADD THIS - PDF Settings link -->
+                <a href="<?php echo esc_url(admin_url('admin.php?page=wc-manual-invoices-pdf-settings')); ?>" class="btn-header">
+                    <span class="dashicons dashicons-pdf" style="margin-right: 6px;"></span>
+                    <?php _e('PDF Settings', 'wc-manual-invoices'); ?>
+                </a>
             </div>
         </div>
     </div>
@@ -135,19 +140,25 @@ foreach ($invoices as $order) {
     <!-- Navigation Tabs -->
     <nav class="nav-tab-wrapper woo-nav-tab-wrapper">
         <a href="<?php echo esc_url($tab_urls['invoices']); ?>" 
-           class="nav-tab <?php echo $current_tab === 'invoices' ? 'nav-tab-active' : ''; ?>">
+        class="nav-tab <?php echo $current_tab === 'invoices' ? 'nav-tab-active' : ''; ?>">
             <span class="dashicons dashicons-list-view"></span>
             <?php _e('All Invoices', 'wc-manual-invoices'); ?>
         </a>
         <a href="<?php echo esc_url($tab_urls['create']); ?>" 
-           class="nav-tab <?php echo $current_tab === 'create' ? 'nav-tab-active' : ''; ?>">
+        class="nav-tab <?php echo $current_tab === 'create' ? 'nav-tab-active' : ''; ?>">
             <span class="dashicons dashicons-plus-alt"></span>
             <?php _e('Create Invoice', 'wc-manual-invoices'); ?>
         </a>
         <a href="<?php echo esc_url($tab_urls['reports']); ?>" 
-           class="nav-tab <?php echo $current_tab === 'reports' ? 'nav-tab-active' : ''; ?>">
+        class="nav-tab <?php echo $current_tab === 'reports' ? 'nav-tab-active' : ''; ?>">
             <span class="dashicons dashicons-chart-bar"></span>
             <?php _e('Reports & Analytics', 'wc-manual-invoices'); ?>
+        </a>
+        <!-- ADD THIS - PDF Settings tab -->
+        <a href="<?php echo esc_url(admin_url('admin.php?page=wc-manual-invoices-pdf-settings')); ?>" 
+        class="nav-tab">
+            <span class="dashicons dashicons-pdf"></span>
+            <?php _e('PDF Settings', 'wc-manual-invoices'); ?>
         </a>
     </nav>
     

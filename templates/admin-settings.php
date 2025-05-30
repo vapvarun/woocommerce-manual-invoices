@@ -28,6 +28,18 @@ function show_fallback_info($setting_key, $current_value, $raw_value) {
 ?>
 
 <div class="wrap">
+    <!-- ADD THIS - Navigation links at top -->
+    <div style="margin-bottom: 20px;">
+        <a href="<?php echo admin_url('admin.php?page=wc-manual-invoices'); ?>" class="button">
+            <span class="dashicons dashicons-arrow-left-alt" style="margin-right: 5px;"></span>
+            <?php _e('Back to Invoices', 'wc-manual-invoices'); ?>
+        </a>
+        <a href="<?php echo admin_url('admin.php?page=wc-manual-invoices-pdf-settings'); ?>" class="button button-secondary" style="margin-left: 10px;">
+            <span class="dashicons dashicons-pdf" style="margin-right: 5px;"></span>
+            <?php _e('PDF Settings', 'wc-manual-invoices'); ?>
+        </a>
+    </div>
+    
     <h1><?php _e('Invoice Settings', 'wc-manual-invoices'); ?></h1>
     
     <form method="post" enctype="multipart/form-data">
@@ -310,6 +322,60 @@ function show_fallback_info($setting_key, $current_value, $raw_value) {
                     <li><?php _e('Footer includes your business name and current year automatically', 'wc-manual-invoices'); ?></li>
                 </ul>
                 <p><?php _e('You can override any of these by filling in the fields above.', 'wc-manual-invoices'); ?></p>
+            </div>
+        </div>
+        
+        <!-- PDF Status Information -->
+        <div class="postbox" style="border-left: 4px solid #0073aa;">
+            <h3 class="hndle">
+                <span class="dashicons dashicons-pdf" style="margin-right: 5px; color: #0073aa;"></span>
+                <?php _e('PDF Generation Status', 'wc-manual-invoices'); ?>
+            </h3>
+            <div class="inside">
+                <?php
+                // Check PDF library status
+                $pdf_status = WC_Manual_Invoice_PDF::get_pdf_library_status();
+                $has_pdf_library = false;
+                foreach ($pdf_status as $library => $info) {
+                    if ($info['available']) {
+                        $has_pdf_library = true;
+                        break;
+                    }
+                }
+                ?>
+                
+                <?php if ($has_pdf_library): ?>
+                    <div style="background: #d4edda; border: 1px solid #c3e6cb; color: #155724; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="dashicons dashicons-yes-alt" style="font-size: 20px;"></span>
+                            <div>
+                                <strong><?php _e('PDF Generation Available', 'wc-manual-invoices'); ?></strong><br>
+                                <?php _e('Professional PDF invoices will be generated for your customers.', 'wc-manual-invoices'); ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <div style="background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="dashicons dashicons-warning" style="font-size: 20px;"></span>
+                            <div>
+                                <strong><?php _e('PDF Library Required', 'wc-manual-invoices'); ?></strong><br>
+                                <?php _e('Invoices will be generated as text files. Install a PDF library for professional formatting.', 'wc-manual-invoices'); ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <p style="margin-bottom: 10px;">
+                    <a href="<?php echo admin_url('admin.php?page=wc-manual-invoices-pdf-settings'); ?>" class="button button-primary">
+                        <span class="dashicons dashicons-admin-tools" style="margin-right: 5px;"></span>
+                        <?php _e('Manage PDF Settings', 'wc-manual-invoices'); ?>
+                    </a>
+                </p>
+                
+                <p style="color: #666; font-size: 13px;">
+                    <?php _e('Configure PDF libraries, test generation, and view system requirements.', 'wc-manual-invoices'); ?>
+                </p>
             </div>
         </div>
         

@@ -1,6 +1,6 @@
 /**
- * WooCommerce Manual Invoices - Enhanced Admin JavaScript with Select2
- * FIXED: Product search functionality
+ * WooCommerce Manual Invoices - Complete Enhanced Admin JavaScript with PDF Installer
+ * UPDATED: Complete file with PDF installer functionality integrated
  */
 
 (function($) {
@@ -19,6 +19,7 @@
             this.initFormValidation();
             this.calculateTotals();
             this.initCustomerToggle();
+            this.initPDFInstaller(); // ADD: PDF installer functionality
         },
         
         /**
@@ -129,7 +130,7 @@
         },
         
         /**
-         * FIXED: Setup individual product select with Select2
+         * Setup individual product select with Select2
          */
         setupProductSelect: function($element) {
             if (!$element.length || $element.hasClass('select2-hidden-accessible')) {
@@ -168,7 +169,7 @@
                         
                         params.page = params.page || 1;
                         
-                        // FIXED: Handle both success and direct data formats
+                        // Handle both success and direct data formats
                         var results = [];
                         var hasMore = false;
                         
@@ -545,7 +546,7 @@
         },
         
         /**
-         * FIXED: Load product details
+         * Load product details
          */
         loadProductDetails: function(productId, $row) {
             console.log('Loading product details for ID:', productId);
@@ -810,6 +811,106 @@
         },
         
         /**
+         * Initialize PDF Installer functionality
+         */
+        initPDFInstaller: function() {
+            // Install PDF library
+            $(document).on('click', '.install-pdf-library', function(e) {
+                e.preventDefault();
+                
+                var $button = $(this);
+                var library = $button.data('library');
+                var method = $button.data('method');
+                var originalText = $button.text();
+                
+                $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Installing...');
+                
+                $.ajax({
+                    url: wc_manual_invoices.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'wc_manual_invoice_install_pdf_library',
+                        library: library,
+                        method: method,
+                        nonce: wc_manual_invoices.nonce
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            $button.removeClass('install-pdf-library')
+                                   .addClass('button-secondary')
+                                   .html('<span class="dashicons dashicons-yes-alt"></span> Installed')
+                                   .prop('disabled', true);
+                            
+                            // Show success message
+                            WCManualInvoices.showNotice('success', response.data.message || 'Installation successful!');
+                            
+                            // Refresh page after 3 seconds
+                            setTimeout(function() {
+                                location.reload();
+                            }, 3000);
+                        } else {
+                            $button.prop('disabled', false).html(originalText);
+                            WCManualInvoices.showNotice('error', response.data.message || 'Installation failed');
+                        }
+                    },
+                    error: function() {
+                        $button.prop('disabled', false).html(originalText);
+                        WCManualInvoices.showNotice('error', 'Installation failed. Please try again or install manually.');
+                    }
+                });
+            });
+            
+            // Test PDF Generation
+            $(document).on('click', '.test-pdf-generation', function(e) {
+                e.preventDefault();
+                
+                var $button = $(this);
+                var originalText = $button.text();
+                
+                $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
+                
+                $.ajax({
+                    url: wc_manual_invoices.ajax_url,
+                    type: 'POST',
+                    data: {
+                        action: 'wc_manual_invoice_test_pdf_generation',
+                        nonce: wc_manual_invoices.nonce
+                    },
+                    success: function(response) {
+                        $button.prop('disabled', false).html(originalText);
+                        
+                        if (response.success) {
+                            var message = 'PDF test successful!';
+                            if (response.data.download_url) {
+                                message += ' <a href="' + response.data.download_url + '" target="_blank">Download Test PDF</a>';
+                            }
+                            WCManualInvoices.showNotice('success', message);
+                        } else {
+                            WCManualInvoices.showNotice('error', response.data.message || 'PDF test failed');
+                        }
+                    },
+                    error: function() {
+                        $button.prop('disabled', false).html(originalText);
+                        WCManualInvoices.showNotice('error', 'PDF test failed. Please try again.');
+                    }
+                });
+            });
+            
+            // Refresh PDF Status
+            $(document).on('click', '.check-pdf-status', function(e) {
+                e.preventDefault();
+                
+                var $button = $(this);
+                $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Checking...');
+                
+                // Refresh page after a short delay to check status
+                setTimeout(function() {
+                    location.reload();
+                }, 1000);
+            });
+        },
+        
+        /**
          * Show loading overlay
          */
         showLoading: function() {
@@ -870,7 +971,7 @@
         
         WCManualInvoices.init();
         
-        // Add some styles for Select2 results
+        // Add some styles for Select2 results and PDF installer
         if (!$('#wc-manual-invoices-select2-styles').length) {
             $('head').append(`
                 <style id="wc-manual-invoices-select2-styles">
@@ -914,11 +1015,32 @@
                     from { transform: rotate(0deg); }
                     to { transform: rotate(359deg); }
                 }
+                .install-pdf-library {
+                    background: #96588a;
+                    color: white;
+                    border: none;
+                }
+                .install-pdf-library:hover {
+                    background: #7e4874;
+                    color: white;
+                }
+                .check-pdf-status:hover {
+                    background: #f0f0f0;
+                }
+                .test-pdf-generation {
+                    background: #0073aa;
+                    color: white;
+                    border: none;
+                }
+                .test-pdf-generation:hover {
+                    background: #005a87;
+                    color: white;
+                }
                 </style>
             `);
         }
         
-        // FIXED: Add debug button for testing product search
+        // Debug button for testing product search (only if debug=1 in URL)
         if (window.location.search.indexOf('debug=1') !== -1) {
             $('body').append('<button id="test-product-search" style="position: fixed; top: 50px; right: 20px; z-index: 9999;">Test Product Search</button>');
             

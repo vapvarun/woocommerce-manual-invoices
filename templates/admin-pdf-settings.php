@@ -24,26 +24,40 @@ foreach ($pdf_status as $library => $info) {
 
 // Handle library installation
 if (isset($_POST['install_dompdf']) && wp_verify_nonce($_POST['_wpnonce'], 'install_pdf_library')) {
-    $result = WC_Manual_Invoice_PDF_Installer::install_dompdf('auto');
+    // CHANGE THIS LINE - Use correct method name
+    $result = WC_Manual_Invoice_PDF_Installer::install_pdf_library('dompdf', 'auto');
     if (is_wp_error($result)) {
         echo '<div class="notice notice-error"><p><strong>Installation Failed:</strong> ' . esc_html($result->get_error_message()) . '</p></div>';
     } elseif (isset($result['success']) && $result['success']) {
         echo '<div class="notice notice-success"><p><strong>Success!</strong> ' . esc_html($result['message']) . ' Please refresh the page to see the updated status.</p></div>';
     } elseif (isset($result['manual'])) {
-        // Manual instructions will be shown below
         echo '<div class="notice notice-info"><p><strong>Manual Installation Required:</strong> Please follow the instructions below.</p></div>';
     }
 }
 
 // Handle test PDF generation
 if (isset($_POST['test_pdf']) && wp_verify_nonce($_POST['_wpnonce'], 'test_pdf_generation')) {
-    $test_result = self::generate_test_pdf();
+    // CHANGE THIS LINE - Remove self:: and use class method
+    $test_result = WC_Manual_Invoice_PDF_Installer::test_pdf_generation();
     if (is_wp_error($test_result)) {
         echo '<div class="notice notice-error"><p><strong>Test Failed:</strong> ' . esc_html($test_result->get_error_message()) . '</p></div>';
     } else {
-        echo '<div class="notice notice-success"><p><strong>Test Successful!</strong> PDF generated successfully. <a href="' . esc_url($test_result['url']) . '" target="_blank">Download Test PDF</a></p></div>';
+        echo '<div class="notice notice-success"><p><strong>Test Successful!</strong> PDF generated successfully. <a href="' . esc_url($test_result['download_url']) . '" target="_blank">Download Test PDF</a></p></div>';
     }
 }
+
+<div class="wrap wc-manual-invoices-wrap">
+    <!-- ADD THIS - Navigation links -->
+    <div style="margin-bottom: 20px;">
+        <a href="<?php echo admin_url('admin.php?page=wc-manual-invoices'); ?>" class="button">
+            <span class="dashicons dashicons-arrow-left-alt" style="margin-right: 5px;"></span>
+            <?php _e('Back to Invoices', 'wc-manual-invoices'); ?>
+        </a>
+        <a href="<?php echo admin_url('admin.php?page=wc-manual-invoices-settings'); ?>" class="button button-secondary" style="margin-left: 10px;">
+            <span class="dashicons dashicons-admin-generic" style="margin-right: 5px;"></span>
+            <?php _e('General Settings', 'wc-manual-invoices'); ?>
+        </a>
+    </div>
 
 // Get system information
 $system_info = WC_Manual_Invoice_PDF_Installer::get_system_info();
@@ -380,7 +394,7 @@ $recommendations = WC_Manual_Invoice_PDF_Installer::get_recommendations();
                     'Memory Limit' => array(
                         'current' => ini_get('memory_limit'),
                         'recommended' => '256M+',
-                        'status' => self::parse_memory_limit(ini_get('memory_limit')) >= 256
+                        'status' => wc_manual_invoices_parse_memory_limit(ini_get('memory_limit')) >= 256
                     ),
                     'Max Execution Time' => array(
                         'current' => ini_get('max_execution_time') . 's',
@@ -390,7 +404,7 @@ $recommendations = WC_Manual_Invoice_PDF_Installer::get_recommendations();
                     'Upload Max Size' => array(
                         'current' => ini_get('upload_max_filesize'),
                         'recommended' => '10M+',
-                        'status' => self::parse_memory_limit(ini_get('upload_max_filesize')) >= 10
+                        'status' => wc_manual_invoices_parse_memory_limit(ini_get('upload_max_filesize')) >= 10
                     ),
                     'GD Extension' => array(
                         'current' => extension_loaded('gd') ? __('Enabled', 'wc-manual-invoices') : __('Disabled', 'wc-manual-invoices'),
@@ -744,51 +758,25 @@ function parse_memory_limit($limit) {
     return $limit / (1024 * 1024); // Return in MB
 }
 
-// Generate test PDF function
-function generate_test_pdf() {
-    try {
-        // Create a dummy order for testing
-        $test_order_data = array(
-            'customer_email' => 'test@example.com',
-            'billing_first_name' => 'Test',
-            'billing_last_name' => 'Customer',
-            'custom_items' => array(
-                array(
-                    'name' => 'Test Service',
-                    'description' => 'PDF generation test',
-                    'quantity' => 1,
-                    'total' => 100.00
-                )
-            ),
-            'notes' => 'This is a test invoice to verify PDF generation is working correctly.',
-            'due_date' => date('Y-m-d', strtotime('+30 days'))
-        );
-        
-        $order_id = WC_Manual_Invoice_Generator::create_invoice($test_order_data);
-        
-        if (is_wp_error($order_id)) {
-            return $order_id;
-        }
-        
-        // Generate PDF
-        $pdf_path = WC_Manual_Invoice_PDF::generate_pdf($order_id, true);
-        
-        if (!$pdf_path) {
-            return new WP_Error('pdf_generation_failed', 'Failed to generate test PDF');
-        }
-        
-        // Get download URL
-        $pdf_url = WC_Manual_Invoice_PDF::get_pdf_download_url($order_id);
-        
-        return array(
-            'success' => true,
-            'order_id' => $order_id,
-            'pdf_path' => $pdf_path,
-            'url' => $pdf_url
-        );
-        
-    } catch (Exception $e) {
-        return new WP_Error('test_pdf_error', $e->getMessage());
+/**
+ * Helper functions for the template
+ */
+
+// Parse memory limit helper function
+function wc_manual_invoices_parse_memory_limit($limit) {
+    $limit = trim($limit);
+    $last = strtolower($limit[strlen($limit)-1]);
+    $limit = intval($limit);
+    
+    switch($last) {
+        case 'g':
+            $limit *= 1024;
+        case 'm':
+            $limit *= 1024;
+        case 'k':
+            $limit *= 1024;
     }
+    
+    return $limit / (1024 * 1024); // Return in MB
 }
 ?>
