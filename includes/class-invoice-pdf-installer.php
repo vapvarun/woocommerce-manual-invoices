@@ -2,116 +2,325 @@
 /**
  * Complete SSL Bypass Solution for DomPDF Installation
  * 
- * This completely bypasses GitHub API and SSL issues by using direct download
- * and fallback to alternative sources
+ * This file provides comprehensive PDF library installation with multiple fallback methods
+ * and complete SSL bypass capabilities for problematic hosting environments.
+ * 
+ * Save as: includes/class-invoice-pdf-installer.php
  */
+
+// Prevent direct access
+if (!defined('ABSPATH')) {
+    exit;
+}
 
 class WC_Manual_Invoice_PDF_Installer {
     
     /**
-     * Primary installation method - Direct download without Composer
-     * This is the most reliable method that bypasses all SSL and API issues
+     * Available PDF libraries with download information
      */
-    public static function install_dompdf_direct() {
+    private static $pdf_libraries = array(
+        'dompdf' => array(
+            'name' => 'DomPDF',
+            'version' => '2.0.4',
+            'download_url' => 'https://github.com/dompdf/dompdf/archive/refs/tags/v2.0.4.zip',
+            'folder_name' => 'dompdf-2.0.4',
+            'main_file' => 'autoload.inc.php',
+            'test_class' => 'Dompdf\\Dompdf',
+            'fallback_class' => 'DOMPDF',
+            'composer_package' => 'dompdf/dompdf',
+            'description' => 'Best overall compatibility with HTML/CSS. Recommended for most users.'
+        ),
+        'tcpdf' => array(
+            'name' => 'TCPDF',
+            'version' => '6.6.5',
+            'download_url' => 'https://github.com/tecnickcom/TCPDF/archive/refs/tags/6.6.5.zip',
+            'folder_name' => 'TCPDF-6.6.5',
+            'main_file' => 'tcpdf.php',
+            'test_class' => 'TCPDF',
+            'composer_package' => 'tecnickcom/tcpdf',
+            'description' => 'Excellent for complex layouts and Unicode support. Good alternative to DomPDF.'
+        ),
+        'mpdf' => array(
+            'name' => 'mPDF',
+            'version' => '8.2.2',
+            'download_url' => 'https://github.com/mpdf/mpdf/archive/refs/tags/v8.2.2.zip',
+            'folder_name' => 'mpdf-8.2.2',
+            'main_file' => 'autoload.php',
+            'test_class' => 'Mpdf\\Mpdf',
+            'composer_package' => 'mpdf/mpdf',
+            'description' => 'Good balance of features and performance. Supports most CSS properties.'
+        ),
+        'fpdf' => array(
+            'name' => 'FPDF',
+            'version' => '1.85',
+            'download_url' => 'http://www.fpdf.org/en/download/fpdf185.zip',
+            'folder_name' => 'fpdf185',
+            'main_file' => 'fpdf.php',
+            'test_class' => 'FPDF',
+            'description' => 'Basic PDF generation. Lightweight but limited styling options.'
+        )
+    );
+    
+    /**
+     * Primary installation method - Direct download with multiple fallbacks
+     * This completely bypasses GitHub API and SSL issues
+     * 
+     * @param string $library Library to install (dompdf, tcpdf, mpdf, fpdf)
+     * @param string $method Installation method (auto, composer, download, manual)
+     * @return array|WP_Error Installation result
+     */
+    public static function install_pdf_library($library = 'dompdf', $method = 'auto') {
+        if (!isset(self::$pdf_libraries[$library])) {
+            return new WP_Error('invalid_library', 'Invalid PDF library specified: ' . $library);
+        }
+        
+        $lib_info = self::$pdf_libraries[$library];
         $plugin_dir = WC_MANUAL_INVOICES_PLUGIN_PATH;
         $lib_dir = $plugin_dir . 'lib/';
-        $dompdf_dir = $lib_dir . 'dompdf/';
+        $target_dir = $lib_dir . $library . '/';
         
-        // Create directories
+        // Create lib directory if it doesn't exist
         if (!file_exists($lib_dir)) {
             wp_mkdir_p($lib_dir);
         }
         
-        // Multiple download sources to try (in order of preference)
-        $download_sources = array(
-            // Source 1: GitHub releases (direct ZIP, no API)
-            array(
-                'url' => 'https://github.com/dompdf/dompdf/archive/refs/tags/v2.0.3.zip',
-                'name' => 'GitHub Direct',
-                'extract_folder' => 'dompdf-2.0.3'
-            ),
-            // Source 2: GitHub codeload (alternative GitHub URL)
-            array(
-                'url' => 'https://codeload.github.com/dompdf/dompdf/zip/refs/tags/v2.0.3',
-                'name' => 'GitHub Codeload',
-                'extract_folder' => 'dompdf-2.0.3'
-            ),
-            // Source 3: Packagist direct download
-            array(
-                'url' => 'https://repo.packagist.org/p2/dompdf/dompdf.json',
-                'name' => 'Packagist',
-                'extract_folder' => 'dompdf-2.0.3',
-                'type' => 'packagist_json' // Special handling
-            ),
-            // Source 4: Mirror/CDN sources
-            array(
-                'url' => 'https://github.com/dompdf/dompdf/zipball/v2.0.3',
-                'name' => 'GitHub Zipball',
-                'extract_folder' => 'dompdf-*' // Variable folder name
-            )
+        // Check if already installed and working
+        if (self::is_library_installed($library)) {
+            return array(
+                'success' => true,
+                'message' => sprintf('%s is already installed and working', $lib_info['name']),
+                'method' => 'existing',
+                'library' => $library,
+                'path' => $target_dir
+            );
+        }
+        
+        // Determine installation methods to try
+        $methods_to_try = array();
+        
+        if ($method === 'auto') {
+            // Try all available methods in order of preference
+            if (self::is_composer_available()) {
+                $methods_to_try[] = 'composer';
+            }
+            $methods_to_try[] = 'download';
+        } elseif ($method === 'composer' && self::is_composer_available()) {
+            $methods_to_try[] = 'composer';
+        } elseif ($method === 'download') {
+            $methods_to_try[] = 'download';
+        } else {
+            return self::get_manual_installation_instructions($library, $lib_info);
+        }
+        
+        $last_error = null;
+        
+        // Try each installation method
+        foreach ($methods_to_try as $install_method) {
+            $result = null;
+            
+            switch ($install_method) {
+                case 'composer':
+                    $result = self::install_via_composer($library, $lib_info);
+                    break;
+                case 'download':
+                    $result = self::install_via_download($library, $lib_info, $target_dir);
+                    break;
+            }
+            
+            if ($result && !is_wp_error($result) && isset($result['success']) && $result['success']) {
+                return $result;
+            }
+            
+            if (is_wp_error($result)) {
+                $last_error = $result;
+                error_log('WC Manual Invoices: ' . $install_method . ' installation failed for ' . $library . ': ' . $result->get_error_message());
+            }
+        }
+        
+        // All automatic methods failed, return manual instructions
+        return self::get_manual_installation_instructions($library, $lib_info, $last_error);
+    }
+    
+    /**
+     * Install library via Composer
+     */
+    private static function install_via_composer($library, $lib_info) {
+        if (!isset($lib_info['composer_package'])) {
+            return new WP_Error('composer_unsupported', 'This library does not support Composer installation');
+        }
+        
+        $package = $lib_info['composer_package'];
+        $plugin_dir = WC_MANUAL_INVOICES_PLUGIN_PATH;
+        
+        // Create composer.json if it doesn't exist
+        $composer_json = $plugin_dir . 'composer.json';
+        if (!file_exists($composer_json)) {
+            self::create_composer_json($plugin_dir);
+        }
+        
+        // Try different composer commands
+        $composer_commands = array(
+            'composer require ' . $package . ' --no-dev --optimize-autoloader',
+            'composer.phar require ' . $package . ' --no-dev --optimize-autoloader',
+            '/usr/local/bin/composer require ' . $package . ' --no-dev --optimize-autoloader'
         );
         
-        foreach ($download_sources as $index => $source) {
-            $result = self::download_and_extract_dompdf($source, $lib_dir, $dompdf_dir);
+        foreach ($composer_commands as $base_command) {
+            $command = sprintf('cd %s && %s 2>&1', escapeshellarg($plugin_dir), $base_command);
+            
+            $output = array();
+            $return_var = null;
+            exec($command, $output, $return_var);
+            
+            if ($return_var === 0) {
+                // Verify installation
+                if (self::is_library_installed($library)) {
+                    return array(
+                        'success' => true,
+                        'message' => sprintf('%s installed successfully via Composer', $lib_info['name']),
+                        'method' => 'composer',
+                        'library' => $library,
+                        'output' => implode("\n", $output)
+                    );
+                }
+            }
+        }
+        
+        return new WP_Error('composer_failed', 'Composer installation failed. Output: ' . implode("\n", $output));
+    }
+    
+    /**
+     * Install library via direct download with multiple fallback methods
+     */
+    private static function install_via_download($library, $lib_info, $target_dir) {
+        $temp_file = sys_get_temp_dir() . '/' . $library . '_' . time() . '.zip';
+        
+        // Multiple download sources to try
+        $download_sources = self::get_download_sources($lib_info);
+        
+        foreach ($download_sources as $source) {
+            $result = self::download_and_extract($source, $temp_file, $target_dir, $lib_info);
             
             if (!is_wp_error($result)) {
                 return array(
                     'success' => true,
-                    'message' => "DomPDF installed successfully from {$source['name']}",
+                    'message' => sprintf('%s installed successfully from %s', $lib_info['name'], $source['name']),
+                    'method' => 'download',
+                    'library' => $library,
                     'source' => $source['name'],
-                    'method' => 'direct_download',
-                    'path' => $dompdf_dir
+                    'path' => $target_dir
                 );
             }
             
-            // Log the failed attempt
-            error_log("WC Manual Invoices: Download attempt " . ($index + 1) . " failed from {$source['name']}: " . $result->get_error_message());
+            error_log('WC Manual Invoices: Download failed from ' . $source['name'] . ': ' . $result->get_error_message());
         }
         
-        // All download sources failed
-        return new WP_Error(
-            'all_downloads_failed',
-            'All download sources failed. This is likely due to server SSL configuration. Please try manual installation.'
-        );
+        return new WP_Error('all_downloads_failed', 'All download sources failed. Please try manual installation.');
     }
     
     /**
-     * Download and extract DomPDF from a source
+     * Get multiple download sources for reliability
      */
-    private static function download_and_extract_dompdf($source, $lib_dir, $target_dir) {
-        $temp_file = $lib_dir . 'dompdf_temp.zip';
+    private static function get_download_sources($lib_info) {
+        $sources = array();
         
-        // Method 1: WordPress HTTP API (most compatible)
-        $result = self::download_via_wp_http($source['url'], $temp_file);
+        // Primary source - GitHub releases
+        $sources[] = array(
+            'name' => 'GitHub Direct',
+            'url' => $lib_info['download_url'],
+            'folder_name' => $lib_info['folder_name']
+        );
         
-        if (is_wp_error($result)) {
-            // Method 2: cURL with SSL bypass
-            $result = self::download_via_curl($source['url'], $temp_file);
+        // Alternative GitHub URLs
+        if (strpos($lib_info['download_url'], 'github.com') !== false) {
+            // Try codeload.github.com as alternative
+            $alt_url = str_replace('github.com', 'codeload.github.com', $lib_info['download_url']);
+            $alt_url = str_replace('/archive/', '/zip/', $alt_url);
+            
+            $sources[] = array(
+                'name' => 'GitHub Codeload',
+                'url' => $alt_url,
+                'folder_name' => $lib_info['folder_name']
+            );
+            
+            // Try zipball format
+            $zipball_url = str_replace('/archive/refs/tags/', '/zipball/', $lib_info['download_url']);
+            $sources[] = array(
+                'name' => 'GitHub Zipball',
+                'url' => $zipball_url,
+                'folder_name' => '*' // Variable folder name
+            );
         }
         
-        if (is_wp_error($result)) {
-            // Method 3: wget with SSL bypass
-            $result = self::download_via_wget($source['url'], $temp_file);
+        return $sources;
+    }
+    
+    /**
+     * Download and extract library with multiple methods
+     */
+    private static function download_and_extract($source, $temp_file, $target_dir, $lib_info) {
+        // Try downloading with different methods
+        $download_methods = array(
+            array('method' => 'wp_remote_get', 'name' => 'WordPress HTTP API'),
+            array('method' => 'curl', 'name' => 'cURL'),
+            array('method' => 'wget', 'name' => 'wget')
+        );
+        
+        $download_success = false;
+        
+        foreach ($download_methods as $method_info) {
+            $result = self::download_file($source['url'], $temp_file, $method_info['method']);
+            
+            if (!is_wp_error($result)) {
+                $download_success = true;
+                break;
+            }
         }
         
-        if (is_wp_error($result)) {
-            return $result;
+        if (!$download_success) {
+            return new WP_Error('download_failed', 'Failed to download from ' . $source['url']);
         }
         
         // Extract the downloaded file
+        $extract_result = self::extract_archive($temp_file, $target_dir, $source['folder_name']);
+        
+        // Clean up temp file
         if (file_exists($temp_file)) {
-            $extract_result = self::extract_dompdf_archive($temp_file, $lib_dir, $target_dir, $source['extract_folder']);
-            unlink($temp_file); // Clean up temp file
+            unlink($temp_file);
+        }
+        
+        if (is_wp_error($extract_result)) {
             return $extract_result;
         }
         
-        return new WP_Error('download_failed', 'Failed to download file');
+        // Verify installation
+        if (!file_exists($target_dir . $lib_info['main_file'])) {
+            return new WP_Error('verification_failed', 'Main library file not found after extraction');
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Download file using specified method
+     */
+    private static function download_file($url, $destination, $method = 'wp_remote_get') {
+        switch ($method) {
+            case 'wp_remote_get':
+                return self::download_via_wp_http($url, $destination);
+            case 'curl':
+                return self::download_via_curl($url, $destination);
+            case 'wget':
+                return self::download_via_wget($url, $destination);
+            default:
+                return new WP_Error('invalid_method', 'Invalid download method');
+        }
     }
     
     /**
      * Download via WordPress HTTP API with maximum compatibility
      */
-    private static function download_via_wp_http($url, $temp_file) {
+    private static function download_via_wp_http($url, $destination) {
         $args = array(
             'timeout' => 300,
             'sslverify' => false,
@@ -143,7 +352,7 @@ class WC_Manual_Invoice_PDF_Installer {
             return new WP_Error('wp_http_error', 'Downloaded file is empty');
         }
         
-        if (file_put_contents($temp_file, $body) === false) {
+        if (file_put_contents($destination, $body) === false) {
             return new WP_Error('wp_http_error', 'Failed to save downloaded file');
         }
         
@@ -153,7 +362,7 @@ class WC_Manual_Invoice_PDF_Installer {
     /**
      * Download via cURL with SSL bypass
      */
-    private static function download_via_curl($url, $temp_file) {
+    private static function download_via_curl($url, $destination) {
         if (!function_exists('curl_init')) {
             return new WP_Error('curl_unavailable', 'cURL is not available');
         }
@@ -167,7 +376,7 @@ class WC_Manual_Invoice_PDF_Installer {
             CURLOPT_TIMEOUT => 300,
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => false,
-            CURLOPT_USERAGENT => 'WordPress-DomPDF-Installer/1.0',
+            CURLOPT_USERAGENT => 'WooCommerce-Manual-Invoices/1.0',
             CURLOPT_HTTPHEADER => array(
                 'Accept: application/zip, application/octet-stream, */*',
                 'Cache-Control: no-cache'
@@ -187,7 +396,7 @@ class WC_Manual_Invoice_PDF_Installer {
             return new WP_Error('curl_error', "HTTP error: {$http_code}");
         }
         
-        if (file_put_contents($temp_file, $data) === false) {
+        if (file_put_contents($destination, $data) === false) {
             return new WP_Error('curl_error', 'Failed to save downloaded file');
         }
         
@@ -197,24 +406,22 @@ class WC_Manual_Invoice_PDF_Installer {
     /**
      * Download via wget with SSL bypass
      */
-    private static function download_via_wget($url, $temp_file) {
-        if (!self::is_command_available('wget')) {
+    private static function download_via_wget($url, $destination) {
+        if (!function_exists('exec') || !self::is_command_available('wget')) {
             return new WP_Error('wget_unavailable', 'wget is not available');
         }
         
         $command = sprintf(
             'wget --no-check-certificate --timeout=300 --tries=3 -O %s %s 2>&1',
-            escapeshellarg($temp_file),
+            escapeshellarg($destination),
             escapeshellarg($url)
         );
         
-        ob_start();
-        $return_var = null;
         $output = array();
+        $return_var = null;
         exec($command, $output, $return_var);
-        ob_end_clean();
         
-        if ($return_var !== 0 || !file_exists($temp_file)) {
+        if ($return_var !== 0 || !file_exists($destination)) {
             return new WP_Error('wget_error', 'wget failed: ' . implode("\n", $output));
         }
         
@@ -222,12 +429,12 @@ class WC_Manual_Invoice_PDF_Installer {
     }
     
     /**
-     * Extract DomPDF archive
+     * Extract archive to target directory
      */
-    private static function extract_dompdf_archive($zip_file, $lib_dir, $target_dir, $extract_folder_pattern) {
+    private static function extract_archive($zip_file, $target_dir, $folder_pattern) {
         // Try PHP's ZipArchive first
         if (class_exists('ZipArchive')) {
-            $result = self::extract_with_ziparchive($zip_file, $lib_dir, $target_dir, $extract_folder_pattern);
+            $result = self::extract_with_ziparchive($zip_file, $target_dir, $folder_pattern);
             if (!is_wp_error($result)) {
                 return $result;
             }
@@ -235,7 +442,7 @@ class WC_Manual_Invoice_PDF_Installer {
         
         // Fallback to command line unzip
         if (self::is_command_available('unzip')) {
-            return self::extract_with_unzip($zip_file, $lib_dir, $target_dir, $extract_folder_pattern);
+            return self::extract_with_unzip($zip_file, $target_dir, $folder_pattern);
         }
         
         return new WP_Error('extraction_failed', 'No extraction method available (ZipArchive or unzip command)');
@@ -244,7 +451,7 @@ class WC_Manual_Invoice_PDF_Installer {
     /**
      * Extract using PHP ZipArchive
      */
-    private static function extract_with_ziparchive($zip_file, $lib_dir, $target_dir, $extract_folder_pattern) {
+    private static function extract_with_ziparchive($zip_file, $target_dir, $folder_pattern) {
         $zip = new ZipArchive;
         $result = $zip->open($zip_file);
         
@@ -252,7 +459,7 @@ class WC_Manual_Invoice_PDF_Installer {
             return new WP_Error('zip_error', "Failed to open ZIP file: error code {$result}");
         }
         
-        $temp_extract = $lib_dir . 'temp_extract_' . time() . '/';
+        $temp_extract = sys_get_temp_dir() . '/wc_pdf_extract_' . time() . '/';
         
         if (!$zip->extractTo($temp_extract)) {
             $zip->close();
@@ -262,21 +469,11 @@ class WC_Manual_Invoice_PDF_Installer {
         $zip->close();
         
         // Find the extracted folder
-        $extracted_folders = glob($temp_extract . $extract_folder_pattern);
-        
-        if (empty($extracted_folders)) {
-            // Try alternative patterns
-            $extracted_folders = glob($temp_extract . 'dompdf*');
-            if (empty($extracted_folders)) {
-                $extracted_folders = glob($temp_extract . '*');
-                // Filter to directories only
-                $extracted_folders = array_filter($extracted_folders, 'is_dir');
-            }
-        }
+        $extracted_folders = self::find_extracted_folder($temp_extract, $folder_pattern);
         
         if (empty($extracted_folders)) {
             self::recursive_rmdir($temp_extract);
-            return new WP_Error('extraction_error', 'No DomPDF folder found in extracted archive');
+            return new WP_Error('extraction_error', 'Library folder not found in extracted archive');
         }
         
         $source_folder = $extracted_folders[0];
@@ -295,19 +492,14 @@ class WC_Manual_Invoice_PDF_Installer {
         // Clean up temp directory
         self::recursive_rmdir($temp_extract);
         
-        // Verify installation
-        if (self::verify_dompdf_files($target_dir)) {
-            return true;
-        } else {
-            return new WP_Error('verification_failed', 'DomPDF files not found after extraction');
-        }
+        return true;
     }
     
     /**
      * Extract using command line unzip
      */
-    private static function extract_with_unzip($zip_file, $lib_dir, $target_dir, $extract_folder_pattern) {
-        $temp_extract = $lib_dir . 'temp_extract_' . time() . '/';
+    private static function extract_with_unzip($zip_file, $target_dir, $folder_pattern) {
+        $temp_extract = sys_get_temp_dir() . '/wc_pdf_extract_' . time() . '/';
         wp_mkdir_p($temp_extract);
         
         $command = sprintf(
@@ -316,31 +508,21 @@ class WC_Manual_Invoice_PDF_Installer {
             escapeshellarg($zip_file)
         );
         
-        ob_start();
-        $return_var = null;
         $output = array();
+        $return_var = null;
         exec($command, $output, $return_var);
-        ob_end_clean();
         
         if ($return_var !== 0) {
             self::recursive_rmdir($temp_extract);
             return new WP_Error('unzip_error', 'Unzip command failed: ' . implode("\n", $output));
         }
         
-        // Find and move the extracted folder (same logic as ZipArchive method)
-        $extracted_folders = glob($temp_extract . $extract_folder_pattern);
-        
-        if (empty($extracted_folders)) {
-            $extracted_folders = glob($temp_extract . 'dompdf*');
-            if (empty($extracted_folders)) {
-                $extracted_folders = glob($temp_extract . '*');
-                $extracted_folders = array_filter($extracted_folders, 'is_dir');
-            }
-        }
+        // Find and move the extracted folder
+        $extracted_folders = self::find_extracted_folder($temp_extract, $folder_pattern);
         
         if (empty($extracted_folders)) {
             self::recursive_rmdir($temp_extract);
-            return new WP_Error('extraction_error', 'No DomPDF folder found in extracted archive');
+            return new WP_Error('extraction_error', 'Library folder not found in extracted archive');
         }
         
         $source_folder = $extracted_folders[0];
@@ -356,104 +538,361 @@ class WC_Manual_Invoice_PDF_Installer {
         
         self::recursive_rmdir($temp_extract);
         
-        if (self::verify_dompdf_files($target_dir)) {
-            return true;
-        } else {
-            return new WP_Error('verification_failed', 'DomPDF files not found after extraction');
-        }
-    }
-    
-    /**
-     * Verify DomPDF installation
-     */
-    private static function verify_dompdf_files($dompdf_dir) {
-        $required_files = array(
-            'autoload.inc.php',
-            'src/Dompdf.php',
-            'src/Options.php'
-        );
-        
-        foreach ($required_files as $file) {
-            if (!file_exists($dompdf_dir . $file)) {
-                return false;
-            }
-        }
-        
         return true;
     }
     
     /**
-     * Completely bypass Composer - create a minimal composer.json that won't trigger downloads
+     * Find extracted folder using pattern matching
      */
-    public static function create_minimal_composer_config($plugin_dir) {
-        $composer_json = $plugin_dir . 'composer.json';
+    private static function find_extracted_folder($temp_extract, $folder_pattern) {
+        $extracted_folders = array();
         
-        // Create a minimal config that just sets up autoloading for manually installed libraries
-        $config = array(
-            'name' => 'wbcomdesigns/woocommerce-manual-invoices',
-            'type' => 'wordpress-plugin',
-            'require' => array(), // Empty - no automatic downloads
-            'autoload' => array(
-                'files' => array(
-                    'lib/dompdf/autoload.inc.php'
-                )
+        // Try exact pattern match first
+        if ($folder_pattern !== '*') {
+            $extracted_folders = glob($temp_extract . $folder_pattern);
+        }
+        
+        // If no exact match or pattern is *, try common patterns
+        if (empty($extracted_folders)) {
+            $patterns = array(
+                '*dompdf*',
+                '*tcpdf*',
+                '*mpdf*',
+                '*fpdf*',
+                '*'
+            );
+            
+            foreach ($patterns as $pattern) {
+                $folders = glob($temp_extract . $pattern);
+                $folders = array_filter($folders, 'is_dir');
+                if (!empty($folders)) {
+                    $extracted_folders = $folders;
+                    break;
+                }
+            }
+        }
+        
+        return $extracted_folders;
+    }
+    
+    /**
+     * Check if library is installed and working
+     */
+    public static function is_library_installed($library) {
+        if (!isset(self::$pdf_libraries[$library])) {
+            return false;
+        }
+        
+        $lib_info = self::$pdf_libraries[$library];
+        
+        // Check manual installation
+        $manual_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/' . $library . '/' . $lib_info['main_file'];
+        if (file_exists($manual_path)) {
+            try {
+                require_once $manual_path;
+                return self::test_library_class($lib_info);
+            } catch (Exception $e) {
+                // Continue to other checks
+            }
+        }
+        
+        // Check composer installation
+        $composer_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php';
+        if (file_exists($composer_path)) {
+            try {
+                require_once $composer_path;
+                return self::test_library_class($lib_info);
+            } catch (Exception $e) {
+                // Continue to other checks
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Test if library class is available
+     */
+    private static function test_library_class($lib_info) {
+        if (isset($lib_info['test_class']) && class_exists($lib_info['test_class'])) {
+            return true;
+        }
+        
+        if (isset($lib_info['fallback_class']) && class_exists($lib_info['fallback_class'])) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get available PDF libraries status
+     */
+    public static function get_pdf_library_status() {
+        $status = array();
+        
+        foreach (self::$pdf_libraries as $key => $info) {
+            $status[$key] = array(
+                'name' => $info['name'],
+                'version' => $info['version'],
+                'available' => self::is_library_installed($key),
+                'description' => $info['description']
+            );
+        }
+        
+        return $status;
+    }
+    
+    /**
+     * Get best available library
+     */
+    public static function get_best_available_library() {
+        $preferred_order = array('dompdf', 'tcpdf', 'mpdf', 'fpdf');
+        
+        foreach ($preferred_order as $library) {
+            if (self::is_library_installed($library)) {
+                return $library;
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get system information for diagnostics
+     */
+    public static function get_system_info() {
+        return array(
+            'php_version' => PHP_VERSION,
+            'memory_limit' => ini_get('memory_limit'),
+            'max_execution_time' => ini_get('max_execution_time'),
+            'upload_max_filesize' => ini_get('upload_max_filesize'),
+            'post_max_size' => ini_get('post_max_size'),
+            'extensions' => array(
+                'gd' => extension_loaded('gd'),
+                'dom' => extension_loaded('dom'),
+                'mbstring' => extension_loaded('mbstring'),
+                'zip' => extension_loaded('zip'),
+                'curl' => extension_loaded('curl'),
+                'openssl' => extension_loaded('openssl'),
+                'zlib' => extension_loaded('zlib')
             ),
-            'config' => array(
-                'vendor-dir' => 'vendor',
-                'preferred-install' => 'dist',
-                'optimize-autoloader' => true
+            'functions' => array(
+                'exec' => function_exists('exec'),
+                'shell_exec' => function_exists('shell_exec'),
+                'curl_init' => function_exists('curl_init'),
+                'file_get_contents' => function_exists('file_get_contents'),
+                'fopen' => function_exists('fopen')
+            ),
+            'write_permissions' => array(
+                'plugin_dir' => is_writable(WC_MANUAL_INVOICES_PLUGIN_PATH),
+                'uploads_dir' => is_writable(wp_upload_dir()['basedir']),
+                'temp_dir' => is_writable(sys_get_temp_dir())
+            ),
+            'server_info' => array(
+                'software' => $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown',
+                'os' => PHP_OS,
+                'architecture' => php_uname('m')
+            )
+        );
+    }
+    
+    /**
+     * Get installation methods available on this system
+     */
+    public static function get_available_methods() {
+        $methods = array();
+        
+        if (self::is_composer_available()) {
+            $methods['composer'] = array(
+                'name' => 'Composer',
+                'description' => 'Automatic installation using Composer package manager',
+                'difficulty' => 'Easy',
+                'available' => true
+            );
+        }
+        
+        $system = self::get_system_info();
+        if ($system['extensions']['curl'] || $system['functions']['file_get_contents']) {
+            $methods['download'] = array(
+                'name' => 'Direct Download',
+                'description' => 'Download and install automatically',
+                'difficulty' => 'Easy',
+                'available' => true
+            );
+        }
+        
+        $methods['manual'] = array(
+            'name' => 'Manual Installation',
+            'description' => 'Download and upload files manually via FTP',
+            'difficulty' => 'Medium',
+            'available' => true
+        );
+        
+        return $methods;
+    }
+    
+    /**
+     * Get installation recommendations based on system capabilities
+     */
+    public static function get_recommendations() {
+        $system = self::get_system_info();
+        $recommendations = array();
+        
+        // Composer recommendation
+        if (self::is_composer_available()) {
+            $recommendations[] = array(
+                'method' => 'composer',
+                'title' => 'Composer Installation (Recommended)',
+                'description' => 'Most reliable method using Composer package manager. Handles dependencies automatically.',
+                'difficulty' => 'Easy',
+                'command' => 'composer require dompdf/dompdf',
+                'priority' => 1
+            );
+        }
+        
+        // Direct download recommendation
+        if ($system['extensions']['curl'] || $system['functions']['file_get_contents']) {
+            $recommendations[] = array(
+                'method' => 'download',
+                'title' => 'Automatic Download',
+                'description' => 'Download and install PDF library files automatically with SSL bypass.',
+                'difficulty' => 'Easy',
+                'priority' => 2
+            );
+        }
+        
+        // Manual installation
+        $recommendations[] = array(
+            'method' => 'manual',
+            'title' => 'Manual Installation',
+            'description' => 'Download library files manually and upload via FTP. Most reliable but requires more steps.',
+            'difficulty' => 'Medium',
+            'priority' => 3
+        );
+        
+        // Hosting support
+        $recommendations[] = array(
+            'method' => 'hosting',
+            'title' => 'Contact Hosting Provider',
+            'description' => 'Ask your hosting provider to install PDF libraries server-wide.',
+            'difficulty' => 'Easy',
+            'note' => 'Best option if you have multiple WordPress sites or limited server access.',
+            'priority' => 4
+        );
+        
+        // Sort by priority
+        usort($recommendations, function($a, $b) {
+            return $a['priority'] - $b['priority'];
+        });
+        
+        return $recommendations;
+    }
+    
+    /**
+     * Get manual installation instructions
+     */
+    private static function get_manual_installation_instructions($library, $lib_info, $last_error = null) {
+        $instructions = array(
+            'success' => false,
+            'manual' => true,
+            'library' => $library,
+            'instructions' => array(
+                'title' => sprintf('Manual Installation Required for %s', $lib_info['name']),
+                'description' => 'Automatic installation failed. Please install manually using the steps below:',
+                'steps' => array(
+                    sprintf('1. Download %s from: %s', $lib_info['name'], $lib_info['download_url']),
+                    '2. Extract the downloaded ZIP file',
+                    sprintf('3. Rename the extracted folder to "%s"', $library),
+                    sprintf('4. Upload the "%s" folder to: %s', $library, WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/'),
+                    sprintf('5. Verify this file exists: %s', WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/' . $library . '/' . $lib_info['main_file']),
+                    '6. Set file permissions: 755 for directories, 644 for files',
+                    '7. Refresh this page to verify installation'
+                ),
+                'verification' => sprintf('After installation, this file should exist: %s', WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/' . $library . '/' . $lib_info['main_file']),
+                'troubleshooting' => array(
+                    'If you continue having issues:',
+                    '• Contact your hosting provider about SSL certificate configuration',
+                    '• Ask them to install PDF libraries via Composer server-side',
+                    '• Use an alternative PDF library (TCPDF, mPDF, or FPDF)',
+                    '• Enable PHP extensions: gd, dom, mbstring, zip'
+                )
             )
         );
         
-        file_put_contents($composer_json, json_encode($config, JSON_PRETTY_PRINT));
+        if ($last_error && is_wp_error($last_error)) {
+            $instructions['last_error'] = $last_error->get_error_message();
+        }
+        
+        return $instructions;
+    }
+    
+    /**
+     * Create minimal composer.json file
+     */
+    private static function create_composer_json($plugin_dir) {
+        $composer_config = array(
+            'name' => 'wbcomdesigns/woocommerce-manual-invoices',
+            'description' => 'WooCommerce Manual Invoices Pro - PDF Library Dependencies',
+            'type' => 'wordpress-plugin',
+            'require' => array(
+                'php' => '>=8.0'
+            ),
+            'config' => array(
+                'vendor-dir' => 'vendor',
+                'optimize-autoloader' => true,
+                'sort-packages' => true
+            ),
+            'minimum-stability' => 'stable',
+            'prefer-stable' => true
+        );
+        
+        $composer_json = $plugin_dir . 'composer.json';
+        file_put_contents($composer_json, json_encode($composer_config, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         
         return $composer_json;
     }
     
     /**
-     * Master installation method that completely avoids Composer for DomPDF
+     * Check if Composer is available
      */
-    public static function install_dompdf($method = 'auto') {
-        // For DomPDF, always use direct download to avoid Composer issues
-        if ($method === 'auto' || $method === 'direct' || $method === 'composer') {
-            $result = self::install_dompdf_direct();
+    public static function is_composer_available() {
+        if (!function_exists('exec')) {
+            return false;
+        }
+        
+        $composer_commands = array('composer', 'composer.phar', '/usr/local/bin/composer', '/usr/bin/composer');
+        
+        foreach ($composer_commands as $composer) {
+            $output = array();
+            $return_var = null;
+            exec("which {$composer} 2>/dev/null || command -v {$composer} 2>/dev/null", $output, $return_var);
             
-            if (!is_wp_error($result) && isset($result['success'])) {
-                // Create minimal composer.json for autoloading
-                self::create_minimal_composer_config(WC_MANUAL_INVOICES_PLUGIN_PATH);
-                return $result;
+            if ($return_var === 0 && !empty($output)) {
+                return true;
             }
         }
         
-        // If direct download fails, provide manual instructions
-        return array(
-            'success' => false,
-            'manual' => true,
-            'instructions' => array(
-                'title' => 'Manual Installation Required',
-                'description' => 'Automatic download failed due to server restrictions. Please install manually:',
-                'steps' => array(
-                    '1. Download DomPDF from: https://github.com/dompdf/dompdf/releases/tag/v2.0.3',
-                    '2. Extract the downloaded ZIP file',
-                    '3. Rename the extracted folder to "dompdf"',
-                    '4. Upload the "dompdf" folder to: ' . WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/',
-                    '5. Verify this file exists: ' . WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php',
-                    '6. Set file permissions: 755 for directories, 644 for files',
-                    '7. Refresh this page to verify installation'
-                ),
-                'verification' => 'After installation, the following file should exist: ' . WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php',
-                'troubleshooting' => array(
-                    'If you continue having issues:',
-                    '• Contact your hosting provider about SSL certificate configuration',
-                    '• Ask them to install DomPDF via Composer server-side',
-                    '• Use an alternative PDF library like TCPDF or FPDF'
-                )
-            )
-        );
+        return false;
     }
     
     /**
-     * Helper functions (keep existing ones)
+     * Check if command is available
+     */
+    private static function is_command_available($command) {
+        if (!function_exists('exec')) {
+            return false;
+        }
+        
+        $output = array();
+        $return_var = null;
+        exec("which {$command} 2>/dev/null || command -v {$command} 2>/dev/null", $output, $return_var);
+        
+        return $return_var === 0 && !empty($output);
+    }
+    
+    /**
+     * Recursively remove directory
      */
     private static function recursive_rmdir($dir) {
         if (is_dir($dir)) {
@@ -471,141 +910,200 @@ class WC_Manual_Invoice_PDF_Installer {
         }
     }
     
-    private static function is_command_available($command) {
-        if (!function_exists('exec')) {
-            return false;
-        }
-        
-        $return_var = null;
-        $output = array();
-        exec("which {$command}", $output, $return_var);
-        
-        return $return_var === 0;
-    }
-}
-
-/**
- * Update the PDF class to handle manual installation
- */
-class WC_Manual_Invoice_PDF {
-    
     /**
-     * Enhanced library detection that works with manual installation
+     * Quick installation method for dashboard
      */
-    private static function is_dompdf_available() {
-        // Check for manually installed DomPDF
-        $manual_paths = array(
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php',
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/src/Dompdf.php'
-        );
-        
-        foreach ($manual_paths as $path) {
-            if (file_exists($path)) {
-                // Try to include and test
-                try {
-                    if (strpos($path, 'autoload.inc.php') !== false) {
-                        require_once $path;
-                        return class_exists('Dompdf') || class_exists('\Dompdf\Dompdf');
-                    }
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        // Check for Composer-installed DomPDF
-        $composer_paths = array(
-            WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php',
-            ABSPATH . 'vendor/autoload.php',
-            WP_CONTENT_DIR . '/vendor/autoload.php'
-        );
-        
-        foreach ($composer_paths as $path) {
-            if (file_exists($path)) {
-                try {
-                    require_once $path;
-                    return class_exists('\Dompdf\Dompdf') || class_exists('Dompdf');
-                } catch (Exception $e) {
-                    continue;
-                }
-            }
-        }
-        
-        return false;
+    public static function quick_install_dompdf() {
+        return self::install_pdf_library('dompdf', 'auto');
     }
     
     /**
-     * Load DomPDF with proper path handling
+     * Test PDF generation with installed library
      */
-    private static function load_dompdf() {
-        // Try manual installation first
-        $manual_autoload = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php';
-        if (file_exists($manual_autoload)) {
-            require_once $manual_autoload;
-            if (class_exists('Dompdf')) {
-                return new Dompdf();
-            } elseif (class_exists('\Dompdf\Dompdf')) {
-                return new \Dompdf\Dompdf();
-            }
+    public static function test_pdf_generation($library = null) {
+        if (!$library) {
+            $library = self::get_best_available_library();
         }
         
-        // Try Composer installation
-        $composer_autoload = WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php';
-        if (file_exists($composer_autoload)) {
-            require_once $composer_autoload;
-            if (class_exists('\Dompdf\Dompdf')) {
-                return new \Dompdf\Dompdf();
-            }
+        if (!$library) {
+            return new WP_Error('no_library', 'No PDF library is installed');
         }
         
-        return false;
-    }
-    
-    /**
-     * Updated DomPDF generation method
-     */
-    private static function generate_with_dompdf($order, $pdf_path) {
         try {
-            $dompdf = self::load_dompdf();
+            // Create simple test HTML
+            $test_html = '<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        h1 { color: #96588a; }
+        .test-box { border: 2px solid #96588a; padding: 15px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>PDF Generation Test</h1>
+    <div class="test-box">
+        <p><strong>Library:</strong> ' . strtoupper($library) . '</p>
+        <p><strong>Test Date:</strong> ' . current_time('Y-m-d H:i:s') . '</p>
+        <p><strong>Status:</strong> PDF generation is working correctly!</p>
+    </div>
+    <p>This test PDF was generated by WooCommerce Manual Invoices Pro to verify that the PDF library is working properly.</p>
+</body>
+</html>';
             
-            if (!$dompdf) {
-                throw new Exception('DomPDF could not be loaded');
+            // Generate test PDF
+            $upload_dir = wp_upload_dir();
+            $pdf_dir = $upload_dir['basedir'] . '/wc-manual-invoices/';
+            $test_file = $pdf_dir . 'test-' . time() . '.pdf';
+            
+            if (!file_exists($pdf_dir)) {
+                wp_mkdir_p($pdf_dir);
             }
             
-            // Configure DomPDF options
-            if (method_exists($dompdf, 'getOptions')) {
-                $options = $dompdf->getOptions();
-                $options->set('defaultFont', 'Arial');
-                $options->set('isRemoteEnabled', true);
-                $options->set('isHtml5ParserEnabled', true);
-                $options->set('isFontSubsettingEnabled', true);
-            }
+            $result = self::generate_test_pdf($library, $test_html, $test_file);
             
-            // Get HTML content
-            $html_content = self::get_invoice_html($order);
-            
-            // Load HTML
-            $dompdf->loadHtml($html_content);
-            
-            // Set paper size and orientation
-            $dompdf->setPaper('A4', 'portrait');
-            
-            // Render PDF
-            $dompdf->render();
-            
-            // Get PDF content
-            $pdf_content = $dompdf->output();
-            
-            // Save to file
-            if (file_put_contents($pdf_path, $pdf_content)) {
-                return $pdf_path;
+            if ($result) {
+                return array(
+                    'success' => true,
+                    'message' => 'PDF generation test successful!',
+                    'library' => $library,
+                    'file_path' => $test_file,
+                    'file_size' => filesize($test_file),
+                    'download_url' => str_replace($upload_dir['basedir'], $upload_dir['baseurl'], $test_file)
+                );
+            } else {
+                return new WP_Error('generation_failed', 'PDF generation failed during test');
             }
             
         } catch (Exception $e) {
-            error_log('WC Manual Invoices PDF Error (DomPDF): ' . $e->getMessage());
+            return new WP_Error('test_error', 'PDF test failed: ' . $e->getMessage());
+        }
+    }
+    
+    /**
+     * Generate test PDF with specific library
+     */
+    private static function generate_test_pdf($library, $html, $output_file) {
+        switch ($library) {
+            case 'dompdf':
+                return self::test_dompdf($html, $output_file);
+            case 'tcpdf':
+                return self::test_tcpdf($html, $output_file);
+            case 'mpdf':
+                return self::test_mpdf($html, $output_file);
+            case 'fpdf':
+                return self::test_fpdf($output_file);
+            default:
+                return false;
+        }
+    }
+    
+    /**
+     * Test DomPDF generation
+     */
+    private static function test_dompdf($html, $output_file) {
+        $dompdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/dompdf/autoload.inc.php';
+        $composer_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php';
+        
+        if (file_exists($dompdf_path)) {
+            require_once $dompdf_path;
+        } elseif (file_exists($composer_path)) {
+            require_once $composer_path;
+        } else {
+            return false;
         }
         
-        return false;
+        if (class_exists('Dompdf\\Dompdf')) {
+            $dompdf = new \Dompdf\Dompdf();
+        } elseif (class_exists('DOMPDF')) {
+            $dompdf = new DOMPDF();
+        } else {
+            return false;
+        }
+        
+        $dompdf->loadHtml($html);
+        $dompdf->setPaper('A4', 'portrait');
+        $dompdf->render();
+        
+        $pdf_content = $dompdf->output();
+        
+        return file_put_contents($output_file, $pdf_content) !== false;
+    }
+    
+    /**
+     * Test TCPDF generation
+     */
+    private static function test_tcpdf($html, $output_file) {
+        $tcpdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/tcpdf/tcpdf.php';
+        $composer_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php';
+        
+        if (file_exists($tcpdf_path)) {
+            require_once $tcpdf_path;
+        } elseif (file_exists($composer_path)) {
+            require_once $composer_path;
+        }
+        
+        if (!class_exists('TCPDF')) {
+            return false;
+        }
+        
+        $pdf = new TCPDF('P', 'mm', 'A4', true, 'UTF-8', false);
+        $pdf->setPrintHeader(false);
+        $pdf->setPrintFooter(false);
+        $pdf->AddPage();
+        $pdf->writeHTML($html, true, false, true, false, '');
+        $pdf->Output($output_file, 'F');
+        
+        return file_exists($output_file);
+    }
+    
+    /**
+     * Test mPDF generation
+     */
+    private static function test_mpdf($html, $output_file) {
+        $composer_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'vendor/autoload.php';
+        
+        if (file_exists($composer_path)) {
+            require_once $composer_path;
+        }
+        
+        if (!class_exists('Mpdf\\Mpdf')) {
+            return false;
+        }
+        
+        $mpdf = new \Mpdf\Mpdf(['format' => 'A4']);
+        $mpdf->WriteHTML($html);
+        $mpdf->Output($output_file, 'F');
+        
+        return file_exists($output_file);
+    }
+    
+    /**
+     * Test FPDF generation (simple text-based)
+     */
+    private static function test_fpdf($output_file) {
+        $fpdf_path = WC_MANUAL_INVOICES_PLUGIN_PATH . 'lib/fpdf/fpdf.php';
+        
+        if (file_exists($fpdf_path)) {
+            require_once $fpdf_path;
+        }
+        
+        if (!class_exists('FPDF')) {
+            return false;
+        }
+        
+        $pdf = new FPDF();
+        $pdf->AddPage();
+        $pdf->SetFont('Arial', 'B', 16);
+        $pdf->Cell(0, 10, 'PDF Generation Test', 0, 1, 'C');
+        $pdf->SetFont('Arial', '', 12);
+        $pdf->Cell(0, 10, 'Library: FPDF', 0, 1);
+        $pdf->Cell(0, 10, 'Date: ' . current_time('Y-m-d H:i:s'), 0, 1);
+        $pdf->Cell(0, 10, 'Status: Working correctly!', 0, 1);
+        $pdf->Output('F', $output_file);
+        
+        return file_exists($output_file);
     }
 }
 ?>
