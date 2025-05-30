@@ -1,9 +1,9 @@
 <?php
 /**
- * Enhanced AJAX Handler for Manual Invoices
+ * Enhanced AJAX Handler for Manual Invoices - DomPDF Focus
  * 
- * Handles AJAX requests for invoice management with pagination and large database support
- * FIXED: Product search functionality
+ * Handles AJAX requests for invoice management with simplified PDF generation
+ * FIXED: Focus only on DomPDF with text fallback
  */
 
 // Prevent direct access
@@ -36,8 +36,7 @@ class WC_Manual_Invoice_AJAX {
         add_action('wp_ajax_wc_manual_invoice_clone', array($this, 'clone_invoice'));
         add_action('wp_ajax_wc_manual_invoice_update_status', array($this, 'update_invoice_status'));
         
-        // ADD THESE - PDF installer AJAX actions
-        add_action('wp_ajax_wc_manual_invoice_install_pdf_library', array($this, 'install_pdf_library'));
+        // Simplified PDF actions - DomPDF only
         add_action('wp_ajax_wc_manual_invoice_test_pdf_generation', array($this, 'test_pdf_generation'));
     }
     
@@ -540,18 +539,57 @@ class WC_Manual_Invoice_AJAX {
             
             if ($pdf_path) {
                 $download_url = WC_Manual_Invoice_PDF::get_pdf_download_url($order_id);
+                
+                // Determine file type for response
+                $file_extension = pathinfo($pdf_path, PATHINFO_EXTENSION);
+                $file_type = $file_extension === 'pdf' ? 'PDF' : 'Text';
+                
                 wp_send_json_success(array(
                     'download_url' => $download_url,
-                    'message' => __('PDF generated successfully', 'wc-manual-invoices'),
+                    'message' => sprintf(__('%s generated successfully', 'wc-manual-invoices'), $file_type),
+                    'file_type' => $file_type
                 ));
             } else {
                 wp_send_json_error(array(
-                    'message' => __('Failed to generate PDF. Please check server requirements.', 'wc-manual-invoices')
+                    'message' => __('Failed to generate invoice file. Please check server requirements.', 'wc-manual-invoices')
                 ));
             }
         } catch (Exception $e) {
             wp_send_json_error(array(
-                'message' => __('PDF generation failed. Please try again.', 'wc-manual-invoices')
+                'message' => __('Invoice generation failed. Please try again.', 'wc-manual-invoices')
+            ));
+        }
+    }
+    
+    /**
+     * Test PDF generation via AJAX
+     */
+    public function test_pdf_generation() {
+        // Check nonce
+        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wc_manual_invoices_nonce')) {
+            wp_send_json_error(array('message' => 'Security check failed'));
+            return;
+        }
+        
+        // Check permissions
+        if (!current_user_can('manage_woocommerce')) {
+            wp_send_json_error(array('message' => 'Insufficient permissions'));
+            return;
+        }
+        
+        try {
+            $result = WC_Manual_Invoice_PDF_Installer::test_pdf_generation();
+            
+            if (is_wp_error($result)) {
+                wp_send_json_error(array(
+                    'message' => $result->get_error_message()
+                ));
+            } else {
+                wp_send_json_success($result);
+            }
+        } catch (Exception $e) {
+            wp_send_json_error(array(
+                'message' => 'Test failed: ' . $e->getMessage()
             ));
         }
     }
@@ -692,81 +730,6 @@ class WC_Manual_Invoice_AJAX {
         } catch (Exception $e) {
             wp_send_json_error(array(
                 'message' => __('Failed to update status. Please try again.', 'wc-manual-invoices')
-            ));
-        }
-    }
-    
-    
-    /**
-     * Install PDF library via AJAX
-     */
-    public function install_pdf_library() {
-        // Check nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wc_manual_invoices_nonce')) {
-            wp_send_json_error(array('message' => 'Security check failed'));
-            return;
-        }
-        
-        // Check permissions
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(array('message' => 'Insufficient permissions'));
-            return;
-        }
-        
-        $library = sanitize_text_field($_POST['library'] ?? 'dompdf');
-        $method = sanitize_text_field($_POST['method'] ?? 'auto');
-        
-        try {
-            $result = WC_Manual_Invoice_PDF_Installer::install_pdf_library($library, $method);
-            
-            if (is_wp_error($result)) {
-                wp_send_json_error(array(
-                    'message' => $result->get_error_message()
-                ));
-            } elseif (isset($result['success']) && $result['success']) {
-                wp_send_json_success($result);
-            } else {
-                wp_send_json_error(array(
-                    'message' => 'Installation failed. Please try manual installation.',
-                    'instructions' => $result
-                ));
-            }
-        } catch (Exception $e) {
-            wp_send_json_error(array(
-                'message' => 'Installation error: ' . $e->getMessage()
-            ));
-        }
-    }
-
-    /**
-     * Test PDF generation via AJAX
-     */
-    public function test_pdf_generation() {
-        // Check nonce
-        if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wc_manual_invoices_nonce')) {
-            wp_send_json_error(array('message' => 'Security check failed'));
-            return;
-        }
-        
-        // Check permissions
-        if (!current_user_can('manage_woocommerce')) {
-            wp_send_json_error(array('message' => 'Insufficient permissions'));
-            return;
-        }
-        
-        try {
-            $result = WC_Manual_Invoice_PDF_Installer::test_pdf_generation();
-            
-            if (is_wp_error($result)) {
-                wp_send_json_error(array(
-                    'message' => $result->get_error_message()
-                ));
-            } else {
-                wp_send_json_success($result);
-            }
-        } catch (Exception $e) {
-            wp_send_json_error(array(
-                'message' => 'Test failed: ' . $e->getMessage()
             ));
         }
     }
