@@ -13,7 +13,8 @@
     ],
     "require": {
         "php": ">=8.0",
-        "dompdf/dompdf": "*"
+        "dompdf/dompdf": "*",
+        "tecnickcom/tcpdf": "*"
     },
     "suggest": {
         "dompdf/dompdf": "^2.0 - Recommended for HTML to PDF conversion with excellent CSS support",
