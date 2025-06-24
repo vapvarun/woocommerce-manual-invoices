@@ -3,15 +3,15 @@
  * UPDATED: Complete file with PDF installer functionality integrated
  */
 
-(function($) {
+(function ($) {
     'use strict';
-    
+
     var WCManualInvoices = {
-        
+
         /**
          * Initialize
          */
-        init: function() {
+        init: function () {
             this.initCustomerSelect();
             this.initProductSelect();
             this.initDynamicRows();
@@ -20,14 +20,15 @@
             this.calculateTotals();
             this.initCustomerToggle();
             this.initPDFInstaller(); // ADD: PDF installer functionality
+            this.initLogoUploader();
         },
-        
+
         /**
          * Initialize customer select with Select2 and AJAX search
          */
-        initCustomerSelect: function() {
+        initCustomerSelect: function () {
             if (!$('#customer_select').length) return;
-            
+
             $('#customer_select').select2({
                 placeholder: wc_manual_invoices.i18n_select_customer || 'Select a customer...',
                 allowClear: true,
@@ -38,7 +39,7 @@
                     type: 'POST',
                     dataType: 'json',
                     delay: 250,
-                    data: function(params) {
+                    data: function (params) {
                         return {
                             action: 'wc_manual_invoice_search_customers',
                             term: params.term,
@@ -46,9 +47,9 @@
                             nonce: wc_manual_invoices.nonce
                         };
                     },
-                    processResults: function(data, params) {
+                    processResults: function (data, params) {
                         params.page = params.page || 1;
-                        
+
                         return {
                             results: data.results || [],
                             pagination: {
@@ -57,33 +58,33 @@
                         };
                     },
                     cache: true,
-                    error: function(xhr, status, error) {
+                    error: function (xhr, status, error) {
                         console.error('Customer search error:', error);
                         WCManualInvoices.showNotice('error', 'Failed to search customers. Please try again.');
                     }
                 },
                 language: {
-                    inputTooShort: function() {
+                    inputTooShort: function () {
                         return wc_manual_invoices.i18n_search_customers || 'Type at least 2 characters to search customers';
                     },
-                    searching: function() {
+                    searching: function () {
                         return wc_manual_invoices.i18n_searching || 'Searching customers...';
                     },
-                    noResults: function() {
+                    noResults: function () {
                         return wc_manual_invoices.i18n_no_customers || 'No customers found';
                     },
-                    loadingMore: function() {
+                    loadingMore: function () {
                         return wc_manual_invoices.i18n_loading_more || 'Loading more results...';
                     }
                 },
-                escapeMarkup: function(markup) {
+                escapeMarkup: function (markup) {
                     return markup;
                 },
-                templateResult: function(customer) {
+                templateResult: function (customer) {
                     if (customer.loading) {
                         return customer.text;
                     }
-                    
+
                     var template = '<div class="customer-result">';
                     template += '<div class="customer-name">' + customer.name + '</div>';
                     template += '<div class="customer-email">' + customer.email + '</div>';
@@ -91,54 +92,54 @@
                         template += '<div class="customer-meta">' + customer.orders_count + ' previous orders</div>';
                     }
                     template += '</div>';
-                    
+
                     return $(template);
                 },
-                templateSelection: function(customer) {
+                templateSelection: function (customer) {
                     return customer.name || customer.text;
                 }
-            }).on('select2:select', function(e) {
+            }).on('select2:select', function (e) {
                 var customer = e.params.data;
                 if (customer.id) {
                     WCManualInvoices.loadCustomerDetails(customer.id);
                     $('.customer-details').slideUp();
                     $('#customer_select').closest('.section-content').find('.customer-toggle').show();
                 }
-            }).on('select2:clear', function() {
+            }).on('select2:clear', function () {
                 $('.customer-details').slideDown();
                 WCManualInvoices.clearCustomerForm();
                 $('#customer_select').closest('.section-content').find('.customer-toggle').hide();
             });
         },
-        
+
         /**
          * Initialize product select with Select2 and AJAX search
          */
-        initProductSelect: function() {
+        initProductSelect: function () {
             // Initialize existing product selects
-            $('.product-select').each(function() {
+            $('.product-select').each(function () {
                 WCManualInvoices.setupProductSelect($(this));
             });
-            
+
             // Initialize new product selects when rows are added
-            $(document).on('DOMNodeInserted', '.invoice-product-row', function() {
+            $(document).on('DOMNodeInserted', '.invoice-product-row', function () {
                 var $select = $(this).find('.product-select');
                 if ($select.length && !$select.hasClass('select2-hidden-accessible')) {
                     WCManualInvoices.setupProductSelect($select);
                 }
             });
         },
-        
+
         /**
          * Setup individual product select with Select2
          */
-        setupProductSelect: function($element) {
+        setupProductSelect: function ($element) {
             if (!$element.length || $element.hasClass('select2-hidden-accessible')) {
                 return; // Already initialized or element doesn't exist
             }
-            
+
             console.log('Initializing product select for element:', $element);
-            
+
             $element.select2({
                 placeholder: wc_manual_invoices.i18n_select_product || 'Search for a product...',
                 allowClear: true,
@@ -149,14 +150,14 @@
                     type: 'POST',
                     dataType: 'json',
                     delay: 300,
-                    data: function(params) {
+                    data: function (params) {
                         console.log('Sending product search request:', {
                             action: 'wc_manual_invoice_search_products',
                             term: params.term,
                             page: params.page || 1,
                             nonce: wc_manual_invoices.nonce
                         });
-                        
+
                         return {
                             action: 'wc_manual_invoice_search_products',
                             term: params.term,
@@ -164,15 +165,15 @@
                             nonce: wc_manual_invoices.nonce
                         };
                     },
-                    processResults: function(data, params) {
+                    processResults: function (data, params) {
                         console.log('Product search response received:', data);
-                        
+
                         params.page = params.page || 1;
-                        
+
                         // Handle both success and direct data formats
                         var results = [];
                         var hasMore = false;
-                        
+
                         if (data && data.success !== undefined) {
                             // WordPress AJAX success format
                             if (data.success && data.data) {
@@ -189,9 +190,9 @@
                         } else {
                             console.error('Unexpected response format:', data);
                         }
-                        
+
                         console.log('Processed results:', results);
-                        
+
                         return {
                             results: results,
                             pagination: {
@@ -200,14 +201,14 @@
                         };
                     },
                     cache: true,
-                    error: function(xhr, status, error) {
+                    error: function (xhr, status, error) {
                         console.error('Product search AJAX error:', {
                             xhr: xhr,
                             status: status,
                             error: error,
                             responseText: xhr.responseText
                         });
-                        
+
                         var errorMessage = 'Failed to search products.';
                         if (xhr.responseText) {
                             try {
@@ -217,36 +218,36 @@
                                 errorMessage += ' Server response: ' + xhr.responseText.substring(0, 100);
                             }
                         }
-                        
+
                         WCManualInvoices.showNotice('error', errorMessage);
                     }
                 },
                 language: {
-                    inputTooShort: function() {
+                    inputTooShort: function () {
                         return wc_manual_invoices.i18n_search_products || 'Type at least 1 character to search products';
                     },
-                    searching: function() {
+                    searching: function () {
                         return wc_manual_invoices.i18n_searching || 'Searching products...';
                     },
-                    noResults: function() {
+                    noResults: function () {
                         return wc_manual_invoices.i18n_no_products || 'No products found';
                     },
-                    errorLoading: function() {
+                    errorLoading: function () {
                         return 'Error loading results. Please try again.';
                     }
                 },
-                escapeMarkup: function(markup) {
+                escapeMarkup: function (markup) {
                     return markup;
                 },
-                templateResult: function(product) {
+                templateResult: function (product) {
                     if (product.loading) {
                         return product.text;
                     }
-                    
+
                     if (!product.name) {
                         return product.text || 'Unknown Product';
                     }
-                    
+
                     var template = '<div class="product-result">';
                     template += '<div class="product-name">' + (product.name || '') + '</div>';
                     template += '<div class="product-price">' + (product.price_formatted || '') + '</div>';
@@ -257,41 +258,41 @@
                         template += '<div class="product-stock ' + product.stock_status + '">' + (product.stock_text || '') + '</div>';
                     }
                     template += '</div>';
-                    
+
                     return $(template);
                 },
-                templateSelection: function(product) {
+                templateSelection: function (product) {
                     return product.name || product.text || 'Select Product';
                 }
-            }).on('select2:select', function(e) {
+            }).on('select2:select', function (e) {
                 var product = e.params.data;
                 var $row = $(this).closest('.invoice-product-row');
                 if (product.id) {
                     WCManualInvoices.loadProductDetails(product.id, $row);
                 }
             });
-            
+
             console.log('Product select initialized successfully');
         },
-        
+
         /**
          * Initialize customer toggle functionality
          */
-        initCustomerToggle: function() {
+        initCustomerToggle: function () {
             // Add toggle button for customer details
             var toggleButton = '<p class="customer-toggle" style="display: none; margin-top: 10px;">' +
-                               '<a href="#" class="button button-secondary" id="toggle-customer-details">' +
-                               '<span class="dashicons dashicons-edit"></span> Edit Customer Details</a></p>';
-            
+                '<a href="#" class="button button-secondary" id="toggle-customer-details">' +
+                '<span class="dashicons dashicons-edit"></span> Edit Customer Details</a></p>';
+
             $('#customer_select').closest('td').append(toggleButton);
-            
-            $(document).on('click', '#toggle-customer-details', function(e) {
+
+            $(document).on('click', '#toggle-customer-details', function (e) {
                 e.preventDefault();
                 $('.customer-details').slideToggle();
-                
+
                 var $button = $(this);
                 var $icon = $button.find('.dashicons');
-                
+
                 if ($('.customer-details').is(':visible')) {
                     $button.html('<span class="dashicons dashicons-hidden"></span> Hide Customer Details');
                 } else {
@@ -299,48 +300,48 @@
                 }
             });
         },
-        
+
         /**
          * Initialize dynamic rows
          */
-        initDynamicRows: function() {
+        initDynamicRows: function () {
             // Add product row
-            $('#add-product-row').on('click', function() {
+            $('#add-product-row').on('click', function () {
                 var $container = $('#invoice-products');
                 var $template = $container.find('.invoice-product-row:first').clone();
-                
+
                 // Clear values and destroy select2
                 $template.find('select').val('').trigger('change');
                 $template.find('input').val('');
-                
+
                 if ($template.find('.product-select').hasClass('select2-hidden-accessible')) {
                     $template.find('.product-select').select2('destroy');
                 }
-                
+
                 // Reset the select element
                 $template.find('.product-select').removeClass('select2-hidden-accessible');
                 $template.find('.select2-container').remove();
-                
+
                 $container.append($template);
-                
+
                 // Initialize Select2 on the new row
                 WCManualInvoices.setupProductSelect($template.find('.product-select'));
-                
+
                 WCManualInvoices.updateRowNumbers();
             });
-            
+
             // Remove product row
-            $(document).on('click', '.remove-product-row', function() {
+            $(document).on('click', '.remove-product-row', function () {
                 var $rows = $('#invoice-products .invoice-product-row');
                 if ($rows.length > 1) {
                     var $row = $(this).closest('.invoice-product-row');
-                    
+
                     // Destroy select2 before removing
                     if ($row.find('.product-select').hasClass('select2-hidden-accessible')) {
                         $row.find('.product-select').select2('destroy');
                     }
-                    
-                    $row.slideUp(300, function() {
+
+                    $row.slideUp(300, function () {
                         $(this).remove();
                         WCManualInvoices.calculateTotals();
                         WCManualInvoices.updateRowNumbers();
@@ -349,44 +350,44 @@
                     WCManualInvoices.showNotice('warning', 'At least one product row is required.');
                 }
             });
-            
+
             // Add custom item row
-            $('#add-custom-item-row').on('click', function() {
+            $('#add-custom-item-row').on('click', function () {
                 var $container = $('#invoice-custom-items');
                 var $template = $container.find('.invoice-custom-item-row:first').clone();
-                
+
                 $template.find('input').val('');
                 $container.append($template);
                 WCManualInvoices.updateRowNumbers();
             });
-            
+
             // Remove custom item row
-            $(document).on('click', '.remove-custom-item-row', function() {
+            $(document).on('click', '.remove-custom-item-row', function () {
                 var $rows = $('#invoice-custom-items .invoice-custom-item-row');
                 if ($rows.length > 1) {
-                    $(this).closest('.invoice-custom-item-row').slideUp(300, function() {
+                    $(this).closest('.invoice-custom-item-row').slideUp(300, function () {
                         $(this).remove();
                         WCManualInvoices.calculateTotals();
                         WCManualInvoices.updateRowNumbers();
                     });
                 }
             });
-            
+
             // Add fee row
-            $('#add-fee-row').on('click', function() {
+            $('#add-fee-row').on('click', function () {
                 var $container = $('#invoice-fees');
                 var $template = $container.find('.invoice-fee-row:first').clone();
-                
+
                 $template.find('input').val('');
                 $container.append($template);
                 WCManualInvoices.updateRowNumbers();
             });
-            
+
             // Remove fee row
-            $(document).on('click', '.remove-fee-row', function() {
+            $(document).on('click', '.remove-fee-row', function () {
                 var $rows = $('#invoice-fees .invoice-fee-row');
                 if ($rows.length > 1) {
-                    $(this).closest('.invoice-fee-row').slideUp(300, function() {
+                    $(this).closest('.invoice-fee-row').slideUp(300, function () {
                         $(this).remove();
                         WCManualInvoices.calculateTotals();
                         WCManualInvoices.updateRowNumbers();
@@ -394,13 +395,13 @@
                 }
             });
         },
-        
+
         /**
          * Update row numbers for accessibility
          */
-        updateRowNumbers: function() {
-            $('#invoice-products .invoice-product-row').each(function(index) {
-                $(this).find('input, select').each(function() {
+        updateRowNumbers: function () {
+            $('#invoice-products .invoice-product-row').each(function (index) {
+                $(this).find('input, select').each(function () {
                     var name = $(this).attr('name');
                     if (name) {
                         // Update array indices
@@ -409,9 +410,9 @@
                     }
                 });
             });
-            
-            $('#invoice-custom-items .invoice-custom-item-row').each(function(index) {
-                $(this).find('input').each(function() {
+
+            $('#invoice-custom-items .invoice-custom-item-row').each(function (index) {
+                $(this).find('input').each(function () {
                     var name = $(this).attr('name');
                     if (name) {
                         var newName = name.replace(/\[\d*\]/, '[' + index + ']');
@@ -419,9 +420,9 @@
                     }
                 });
             });
-            
-            $('#invoice-fees .invoice-fee-row').each(function(index) {
-                $(this).find('input').each(function() {
+
+            $('#invoice-fees .invoice-fee-row').each(function (index) {
+                $(this).find('input').each(function () {
                     var name = $(this).attr('name');
                     if (name) {
                         var newName = name.replace(/\[\d*\]/, '[' + index + ']');
@@ -430,48 +431,48 @@
                 });
             });
         },
-        
+
         /**
          * Initialize AJAX actions
          */
-        initAjaxActions: function() {
+        initAjaxActions: function () {
             // Send invoice email
-            $(document).on('click', '.send-invoice-email', function(e) {
+            $(document).on('click', '.send-invoice-email', function (e) {
                 e.preventDefault();
                 var $button = $(this);
                 var orderId = $button.data('order-id');
-                
+
                 $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span>');
-                
-                WCManualInvoices.sendInvoiceEmail(orderId).always(function() {
+
+                WCManualInvoices.sendInvoiceEmail(orderId).always(function () {
                     $button.prop('disabled', false).html('<span class="dashicons dashicons-email-alt"></span>');
                 });
             });
-            
+
             // Generate PDF
-            $(document).on('click', '.generate-pdf', function(e) {
+            $(document).on('click', '.generate-pdf', function (e) {
                 e.preventDefault();
                 var $button = $(this);
                 var orderId = $button.data('order-id');
-                
+
                 $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span>');
-                
-                WCManualInvoices.generatePDF(orderId).always(function() {
+
+                WCManualInvoices.generatePDF(orderId).always(function () {
                     $button.prop('disabled', false).html('<span class="dashicons dashicons-pdf"></span>');
                 });
             });
-            
+
             // Clone invoice
-            $(document).on('click', '.clone-invoice', function(e) {
+            $(document).on('click', '.clone-invoice', function (e) {
                 e.preventDefault();
                 var orderId = $(this).data('order-id');
                 if (confirm(wc_manual_invoices.i18n_confirm_clone || 'Are you sure you want to clone this invoice?')) {
                     WCManualInvoices.cloneInvoice(orderId);
                 }
             });
-            
+
             // Delete invoice
-            $(document).on('click', '.delete-invoice', function(e) {
+            $(document).on('click', '.delete-invoice', function (e) {
                 e.preventDefault();
                 var orderId = $(this).data('order-id');
                 if (confirm(wc_manual_invoices.i18n_confirm_delete || 'Are you sure you want to delete this invoice? This action cannot be undone.')) {
@@ -479,16 +480,16 @@
                 }
             });
         },
-        
+
         /**
          * Initialize form validation
          */
-        initFormValidation: function() {
-            $('#wc-manual-invoice-form').on('submit', function(e) {
+        initFormValidation: function () {
+            $('#wc-manual-invoice-form').on('submit', function (e) {
                 var hasCustomer = $('#customer_select').val() || $('#customer_email').val();
-                var hasItems = $('.invoice-product-row select').filter(function() { return $(this).val(); }).length > 0 ||
-                              $('.invoice-custom-item-row input[name*="custom_item_names"]').filter(function() { return $(this).val(); }).length > 0;
-                
+                var hasItems = $('.invoice-product-row select').filter(function () { return $(this).val(); }).length > 0 ||
+                    $('.invoice-custom-item-row input[name*="custom_item_names"]').filter(function () { return $(this).val(); }).length > 0;
+
                 if (!hasCustomer) {
                     e.preventDefault();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_customer_required || 'Please select a customer or enter email address.');
@@ -497,7 +498,7 @@
                     }, 500);
                     return false;
                 }
-                
+
                 if (!hasItems) {
                     e.preventDefault();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_items_required || 'Please add at least one item to the invoice.');
@@ -506,16 +507,16 @@
                     }, 500);
                     return false;
                 }
-                
+
                 // Show loading state
                 WCManualInvoices.showLoading();
             });
         },
-        
+
         /**
          * Load customer details
          */
-        loadCustomerDetails: function(customerId) {
+        loadCustomerDetails: function (customerId) {
             $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -524,7 +525,7 @@
                     customer_id: customerId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     if (response.success) {
                         var customer = response.data;
                         $('#customer_email').val(customer.email);
@@ -539,18 +540,18 @@
                         $('#billing_country').val(customer.country);
                     }
                 },
-                error: function() {
+                error: function () {
                     WCManualInvoices.showNotice('error', 'Failed to load customer details.');
                 }
             });
         },
-        
+
         /**
          * Load product details
          */
-        loadProductDetails: function(productId, $row) {
+        loadProductDetails: function (productId, $row) {
             console.log('Loading product details for ID:', productId);
-            
+
             $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -559,43 +560,43 @@
                     product_id: productId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     console.log('Product details response:', response);
-                    
+
                     if (response.success) {
                         var product = response.data;
                         var quantity = parseInt($row.find('input[name*="product_quantities"]').val()) || 1;
                         var unitPrice = parseFloat(product.price) || 0;
                         var total = unitPrice * quantity;
-                        
+
                         $row.find('input[name*="product_totals"]').val(total.toFixed(2));
                         WCManualInvoices.calculateTotals();
                     } else {
                         console.error('Failed to load product details:', response.data);
                     }
                 },
-                error: function(xhr, status, error) {
+                error: function (xhr, status, error) {
                     console.error('Product details AJAX error:', error);
                     WCManualInvoices.showNotice('error', 'Failed to load product details.');
                 }
             });
         },
-        
+
         /**
          * Clear customer form
          */
-        clearCustomerForm: function() {
+        clearCustomerForm: function () {
             $('#customer_email, #billing_first_name, #billing_last_name, #billing_phone')
                 .add('#billing_address_1, #billing_address_2, #billing_city, #billing_state')
                 .add('#billing_postcode').val('');
             $('#billing_country').val('US');
         },
-        
+
         /**
          * Calculate totals with real-time updates
          */
-        calculateTotals: function() {
-            $(document).on('input', 'input[name*="product_quantities"], input[name*="product_totals"], input[name*="custom_item_totals"]', function() {
+        calculateTotals: function () {
+            $(document).on('input', 'input[name*="product_quantities"], input[name*="product_totals"], input[name*="custom_item_totals"]', function () {
                 // Auto-calculate product totals when quantity changes
                 var $row = $(this).closest('.invoice-product-row');
                 if ($(this).is('input[name*="product_quantities"]') && $row.length) {
@@ -610,61 +611,61 @@
                         }
                     }
                 }
-                
+
                 // Update grand total display if we have one
                 WCManualInvoices.updateGrandTotal();
             });
         },
-        
+
         /**
          * Update grand total display
          */
-        updateGrandTotal: function() {
+        updateGrandTotal: function () {
             var subtotal = 0;
-            
+
             // Add product totals
-            $('input[name*="product_totals"]').each(function() {
+            $('input[name*="product_totals"]').each(function () {
                 if ($(this).val()) {
                     subtotal += parseFloat($(this).val()) || 0;
                 }
             });
-            
+
             // Add custom item totals
-            $('input[name*="custom_item_totals"]').each(function() {
+            $('input[name*="custom_item_totals"]').each(function () {
                 if ($(this).val()) {
                     subtotal += parseFloat($(this).val()) || 0;
                 }
             });
-            
+
             // Add fees
-            $('input[name*="fee_amounts"]').each(function() {
+            $('input[name*="fee_amounts"]').each(function () {
                 if ($(this).val()) {
                     subtotal += parseFloat($(this).val()) || 0;
                 }
             });
-            
+
             // Add shipping
             var shipping = parseFloat($('#shipping_total').val()) || 0;
             subtotal += shipping;
-            
+
             // Add tax
             var tax = parseFloat($('#tax_total').val()) || 0;
             subtotal += tax;
-            
+
             // Update display if element exists
             if ($('#invoice-total-display').length) {
                 $('#invoice-total-display').text(WCManualInvoices.formatPrice(subtotal));
             }
         },
-        
+
         /**
          * Format price with currency
          */
-        formatPrice: function(price) {
+        formatPrice: function (price) {
             var formattedPrice = price.toFixed(2);
             var symbol = wc_manual_invoices.currency_symbol || '$';
             var position = wc_manual_invoices.currency_position || 'left';
-            
+
             switch (position) {
                 case 'left':
                     return symbol + formattedPrice;
@@ -678,13 +679,13 @@
                     return symbol + formattedPrice;
             }
         },
-        
+
         /**
          * Send invoice email
          */
-        sendInvoiceEmail: function(orderId) {
+        sendInvoiceEmail: function (orderId) {
             WCManualInvoices.showLoading();
-            
+
             return $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -693,7 +694,7 @@
                     order_id: orderId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     WCManualInvoices.hideLoading();
                     if (response.success) {
                         WCManualInvoices.showNotice('success', response.data.message || 'Email sent successfully');
@@ -701,19 +702,19 @@
                         WCManualInvoices.showNotice('error', response.data.message || 'Failed to send email');
                     }
                 },
-                error: function() {
+                error: function () {
                     WCManualInvoices.hideLoading();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_ajax_error || 'An error occurred. Please try again.');
                 }
             });
         },
-        
+
         /**
          * Generate PDF
          */
-        generatePDF: function(orderId) {
+        generatePDF: function (orderId) {
             WCManualInvoices.showLoading();
-            
+
             return $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -722,7 +723,7 @@
                     order_id: orderId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     WCManualInvoices.hideLoading();
                     if (response.success) {
                         if (response.data.download_url) {
@@ -733,19 +734,19 @@
                         WCManualInvoices.showNotice('error', response.data.message || 'Failed to generate PDF');
                     }
                 },
-                error: function() {
+                error: function () {
                     WCManualInvoices.hideLoading();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_ajax_error || 'An error occurred. Please try again.');
                 }
             });
         },
-        
+
         /**
          * Clone invoice
          */
-        cloneInvoice: function(orderId) {
+        cloneInvoice: function (orderId) {
             WCManualInvoices.showLoading();
-            
+
             $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -754,16 +755,16 @@
                     order_id: orderId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     WCManualInvoices.hideLoading();
                     if (response.success) {
                         WCManualInvoices.showNotice('success', response.data.message || 'Invoice cloned successfully');
                         if (response.data.redirect_url) {
-                            setTimeout(function() {
+                            setTimeout(function () {
                                 window.location.href = response.data.redirect_url;
                             }, 1500);
                         } else {
-                            setTimeout(function() {
+                            setTimeout(function () {
                                 location.reload();
                             }, 1500);
                         }
@@ -771,19 +772,19 @@
                         WCManualInvoices.showNotice('error', response.data.message || 'Failed to clone invoice');
                     }
                 },
-                error: function() {
+                error: function () {
                     WCManualInvoices.hideLoading();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_ajax_error || 'An error occurred. Please try again.');
                 }
             });
         },
-        
+
         /**
          * Delete invoice
          */
-        deleteInvoice: function(orderId) {
+        deleteInvoice: function (orderId) {
             WCManualInvoices.showLoading();
-            
+
             $.ajax({
                 url: wc_manual_invoices.ajax_url,
                 type: 'POST',
@@ -792,39 +793,39 @@
                     order_id: orderId,
                     nonce: wc_manual_invoices.nonce
                 },
-                success: function(response) {
+                success: function (response) {
                     WCManualInvoices.hideLoading();
                     if (response.success) {
                         WCManualInvoices.showNotice('success', response.data.message || 'Invoice deleted successfully');
-                        setTimeout(function() {
+                        setTimeout(function () {
                             location.reload();
                         }, 1500);
                     } else {
                         WCManualInvoices.showNotice('error', response.data.message || 'Failed to delete invoice');
                     }
                 },
-                error: function() {
+                error: function () {
                     WCManualInvoices.hideLoading();
                     WCManualInvoices.showNotice('error', wc_manual_invoices.i18n_ajax_error || 'An error occurred. Please try again.');
                 }
             });
         },
-        
+
         /**
          * Initialize PDF Installer functionality
          */
-        initPDFInstaller: function() {
+        initPDFInstaller: function () {
             // Install PDF library
-            $(document).on('click', '.install-pdf-library', function(e) {
+            $(document).on('click', '.install-pdf-library', function (e) {
                 e.preventDefault();
-                
+
                 var $button = $(this);
                 var library = $button.data('library');
                 var method = $button.data('method');
                 var originalText = $button.text();
-                
+
                 $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Installing...');
-                
+
                 $.ajax({
                     url: wc_manual_invoices.ajax_url,
                     type: 'POST',
@@ -834,18 +835,18 @@
                         method: method,
                         nonce: wc_manual_invoices.nonce
                     },
-                    success: function(response) {
+                    success: function (response) {
                         if (response.success) {
                             $button.removeClass('install-pdf-library')
-                                   .addClass('button-secondary')
-                                   .html('<span class="dashicons dashicons-yes-alt"></span> Installed')
-                                   .prop('disabled', true);
-                            
+                                .addClass('button-secondary')
+                                .html('<span class="dashicons dashicons-yes-alt"></span> Installed')
+                                .prop('disabled', true);
+
                             // Show success message
                             WCManualInvoices.showNotice('success', response.data.message || 'Installation successful!');
-                            
+
                             // Refresh page after 3 seconds
-                            setTimeout(function() {
+                            setTimeout(function () {
                                 location.reload();
                             }, 3000);
                         } else {
@@ -853,22 +854,22 @@
                             WCManualInvoices.showNotice('error', response.data.message || 'Installation failed');
                         }
                     },
-                    error: function() {
+                    error: function () {
                         $button.prop('disabled', false).html(originalText);
                         WCManualInvoices.showNotice('error', 'Installation failed. Please try again or install manually.');
                     }
                 });
             });
-            
+
             // Test PDF Generation
-            $(document).on('click', '.test-pdf-generation', function(e) {
+            $(document).on('click', '.test-pdf-generation', function (e) {
                 e.preventDefault();
-                
+
                 var $button = $(this);
                 var originalText = $button.text();
-                
+
                 $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Testing...');
-                
+
                 $.ajax({
                     url: wc_manual_invoices.ajax_url,
                     type: 'POST',
@@ -876,9 +877,9 @@
                         action: 'wc_manual_invoice_test_pdf_generation',
                         nonce: wc_manual_invoices.nonce
                     },
-                    success: function(response) {
+                    success: function (response) {
                         $button.prop('disabled', false).html(originalText);
-                        
+
                         if (response.success) {
                             var message = 'PDF test successful!';
                             if (response.data.download_url) {
@@ -889,88 +890,151 @@
                             WCManualInvoices.showNotice('error', response.data.message || 'PDF test failed');
                         }
                     },
-                    error: function() {
+                    error: function () {
                         $button.prop('disabled', false).html(originalText);
                         WCManualInvoices.showNotice('error', 'PDF test failed. Please try again.');
                     }
                 });
             });
-            
+
             // Refresh PDF Status
-            $(document).on('click', '.check-pdf-status', function(e) {
+            $(document).on('click', '.check-pdf-status', function (e) {
                 e.preventDefault();
-                
+
                 var $button = $(this);
                 $button.prop('disabled', true).html('<span class="dashicons dashicons-update spin"></span> Checking...');
-                
+
                 // Refresh page after a short delay to check status
-                setTimeout(function() {
+                setTimeout(function () {
                     location.reload();
                 }, 1000);
             });
         },
-        
+
         /**
          * Show loading overlay
          */
-        showLoading: function() {
+        showLoading: function () {
             $('#wc-manual-invoices-loading').fadeIn(200);
         },
-        
+
         /**
          * Hide loading overlay
          */
-        hideLoading: function() {
+        hideLoading: function () {
             $('#wc-manual-invoices-loading').fadeOut(200);
         },
-        
+
         /**
          * Show notice
          */
-        showNotice: function(type, message) {
+        showNotice: function (type, message) {
             var $notice = $('<div class="notice notice-' + type + ' is-dismissible wc-manual-invoices-notice">' +
-                          '<p>' + message + '</p>' +
-                          '<button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss</span></button>' +
-                          '</div>');
-            
+                '<p>' + message + '</p>' +
+                '<button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss</span></button>' +
+                '</div>');
+
             // Insert after header or at top of page
             if ($('.wc-manual-invoices-header').length) {
                 $('.wc-manual-invoices-header').after($notice);
             } else {
                 $('.wrap h1').first().after($notice);
             }
-            
+
             // Handle dismiss button
-            $notice.find('.notice-dismiss').on('click', function() {
-                $notice.fadeOut(300, function() {
+            $notice.find('.notice-dismiss').on('click', function () {
+                $notice.fadeOut(300, function () {
                     $(this).remove();
                 });
             });
-            
+
             // Auto-dismiss after 5 seconds for success messages
             if (type === 'success') {
-                setTimeout(function() {
-                    $notice.fadeOut(300, function() {
+                setTimeout(function () {
+                    $notice.fadeOut(300, function () {
                         $(this).remove();
                     });
                 }, 5000);
             }
-            
+
             // Scroll to notice
             $('html, body').animate({
                 scrollTop: $notice.offset().top - 100
             }, 300);
+        },
+
+        /**
+         * Initialize media uploader for company logo fields
+         */
+        initLogoUploader: function () {
+            const uploadBtn = document.getElementById('wcip-company-logo-button');
+            const removeBtn = document.getElementById('wcip-remove-logo');
+            if (!uploadBtn || uploadBtn.classList.contains('initialized')) return;
+
+            // Add click event listener
+            uploadBtn.addEventListener('click', function (e) {
+                e.preventDefault();
+                WCManualInvoices.setupLogoUploader(uploadBtn);
+            });
+
+            // Remove Logo
+            removeBtn.addEventListener('click', function () {
+                const inputId = uploadBtn.getAttribute('data-target-input');
+                const previewId = uploadBtn.getAttribute('data-target-preview');
+
+                document.getElementById(inputId).value = '';
+                document.getElementById(previewId).innerHTML = '';
+                this.style.display = 'none';
+            });
+        },
+
+
+        /**
+         * Sets up the WordPress Media Uploader for a given logo upload button.
+         *
+         * @param {HTMLElement} button - The button element triggering the uploader.
+         */
+        setupLogoUploader: function (button) {
+            // Get the hidden input and preview container by data attributes
+            var inputId = button.getAttribute('data-target-input');
+            var previewId = button.getAttribute('data-target-preview');
+
+            var $input = jQuery('#' + inputId);
+            var $preview = jQuery('#' + previewId);
+
+            // Create the media frame
+            var file_frame = wp.media({
+                title: 'Select or Upload Logo',
+                button: {
+                    text: 'Use this logo'
+                },
+                multiple: false
+            });
+
+            // When an image is selected
+            file_frame.on('select', function () {
+                var attachment = file_frame.state().get('selection').first().toJSON();
+
+                // Set the hidden input value
+                $input.val(attachment.url);
+
+                // Display preview
+                $preview.html('<img src="' + attachment.url + '" style="max-height: 100px;">');
+            });
+
+            // Open the media frame
+            file_frame.open();
         }
     };
-    
+
     // Initialize when document is ready
-    $(document).ready(function() {
+    $(document).ready(function () {
         console.log('WC Manual Invoices: Initializing admin JavaScript');
         console.log('AJAX URL:', wc_manual_invoices.ajax_url);
         console.log('Nonce:', wc_manual_invoices.nonce);
-        
+
         WCManualInvoices.init();
-        
+
         // Add some styles for Select2 results and PDF installer
         if (!$('#wc-manual-invoices-select2-styles').length) {
             $('head').append(`
@@ -1039,12 +1103,12 @@
                 </style>
             `);
         }
-        
+
         // Debug button for testing product search (only if debug=1 in URL)
         if (window.location.search.indexOf('debug=1') !== -1) {
             $('body').append('<button id="test-product-search" style="position: fixed; top: 50px; right: 20px; z-index: 9999;">Test Product Search</button>');
-            
-            $('#test-product-search').on('click', function() {
+
+            $('#test-product-search').on('click', function () {
                 $.ajax({
                     url: wc_manual_invoices.ajax_url,
                     type: 'POST',
@@ -1054,11 +1118,11 @@
                         page: 1,
                         nonce: wc_manual_invoices.nonce
                     },
-                    success: function(response) {
+                    success: function (response) {
                         console.log('Debug product search result:', response);
                         alert('Product search test completed. Check console for results.');
                     },
-                    error: function(xhr, status, error) {
+                    error: function (xhr, status, error) {
                         console.error('Debug product search error:', xhr.responseText);
                         alert('Product search test failed. Check console for error.');
                     }
@@ -1066,5 +1130,5 @@
             });
         }
     });
-    
+
 })(jQuery);

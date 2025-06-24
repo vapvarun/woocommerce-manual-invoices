@@ -601,6 +601,10 @@ textarea:focus {
     margin-bottom: 24px;
 }
 
+.wbcom-wrap .notice.notice-error {
+    display: none !important;
+}
+
 /* Responsive Design */
 @media (max-width: 1200px) {
     .wc-manual-invoices-stats {
